@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#151d2a"><title>Systema · Lessons &amp; video requests</title><link rel="icon" href="data:,"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="onboarding.css"><script src="onboarding.js" defer></script></head>
+<body>
+<header class="topbar"><a class="brand" href="/">SYSTEMA<span class="brand-sub">Movement lessons</span></a><span class="badge">Student workspace</span></header>
+<main class="onboarding">
+<section class="lesson-heading"><div><p class="eyebrow">STUDY THE MOVEMENT</p><h1>Explore. Observe. Annotate.</h1><p>Open a prepared lesson and add your own observations, or request a new video for your teacher to process.</p></div><a class="demo-link" href="/?demo=1">Explore the sample lesson →</a></section>
+<section class="saved-section"><div class="lesson-heading"><div><p class="eyebrow">READY TO EXPLORE</p><h2>Movement lessons</h2></div><button id="refreshLessons" class="quiet">Refresh</button></div><div id="lessonLibrary" class="lesson-library"><p class="helper">Loading lessons…</p></div></section>
+<div class="request-grid">
+<section class="setup-card request-card"><p class="eyebrow">SUGGEST A VIDEO</p><h2>Request video processing</h2><p class="helper">Send your teacher a video link and the passage you want to study. Your teacher reviews the request and prepares the lesson.</p>
+<form id="requestForm"><label>Your name<input id="requestName" name="name" required maxlength="120" autocomplete="name" placeholder="Your name"></label><label>Request title<input id="requestTitle" name="title" required maxlength="120" placeholder="e.g. Working through the first contact"></label><label>Video link<input id="requestUrl" name="url" type="url" required maxlength="2048" placeholder="https://…"></label><label>Passage to study <span class="optional">optional</span><input id="requestPassage" name="passage" maxlength="2000" placeholder="e.g. 1:20–1:45, when the second person approaches"></label><label>What would you like to explore? <span class="optional">optional</span><textarea id="requestMessage" name="message" rows="3" maxlength="4000" placeholder="Add context for your teacher…"></textarea></label><button id="submitRequest" class="primary full-width" type="submit">Submit video request</button><p id="requestStatus" role="status"></p><p id="requestError" class="form-error" role="alert" hidden></p></form></section>
+<section class="setup-card"><div class="panel-heading"><div><p class="eyebrow">FOLLOW YOUR SUBMISSIONS</p><h2>Your video requests</h2></div><button id="refreshRequests" class="quiet">Refresh</button></div><div id="requestList" class="request-list"><p class="helper">Loading your requests…</p></div><p class="request-privacy">Your requests and annotations belong to this browser. Return using the same browser to find them.</p></section>
+</div>
+<p id="setupError" class="form-error" role="alert" hidden></p>
+</main></body></html>

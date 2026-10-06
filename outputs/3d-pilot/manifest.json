@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "status": "reconstructed_awaiting_review",
+  "title": "Multiple attackers - shared 3D scene pilot",
+  "input": "multiple-attackers-18-30.mp4",
+  "sha256": "c827366d700bf720bc5e83a4292c5606cc9806fa5eee3955d2a72b92aa1a69f9",
+  "bytes": 14466842,
+  "sourceStart": 18,
+  "sourceEnd": 30,
+  "fps": 30,
+  "frames": 360,
+  "frameMapping": "clip frame i maps to original frame 540 + i, at source time 18 + i / 30 seconds",
+  "reconstruction": {
+    "method": "PromptHMR world-coordinate multi-person video",
+    "repository": "https://github.com/yufu-wang/PromptHMR",
+    "commit": "3b566b7dbb28ce506c7ea972c18693f4c705ce8c",
+    "cameraAssumption": "moving-camera estimation; static mode requires source review",
+    "noncommercialUseConfirmed": "2026-10-01",
+    "hasRun": true,
+    "runtime": {
+      "type": "WSL2",
+      "distribution": "Systema3D",
+      "location": "D:/systema_pose_3d_runtime",
+      "diskCapGiB": 24,
+      "dockerRequired": false
+    },
+    "imageBatchSize": 2,
+    "gpu": "NVIDIA GeForce RTX 4070",
+    "depthBatchSize": 2,
+    "clipWeights": "complete encoder from main checkpoint; strict state loading retained",
+    "expectedParticipants": 4,
+    "tracking": "reviewed 2D identity tracks, interpolated boxes, fresh ViTPose keypoints",
+    "maskPrompts": false,
+    "cameraInitializationFrame": 30,
+    "outputDirectory": "reconstruction-reviewed-ids",
+    "reference2dSha256": "3a9791e09a633807fac4ff0debb81018eea353f880c67b23418b1b1cf50928bf"
+  },
+  "bodyModelRequirements": [
+    {
+      "path": "data/body_models/smplx/SMPLX_NEUTRAL.npz",
+      "present": true
+    },
+    {
+      "path": "data/body_models/smpl/SMPL_NEUTRAL.pkl",
+      "present": true
+    },
+    {
+      "path": "data/body_models/smplx2smpl.pkl",
+      "present": true
+    },
+    {
+      "path": "data/body_models/smplx2smpl_joints.npy",
+      "present": true
+    },
+    {
+      "path": "data/body_models/smplx/SMPLX_neutral_array_f32_slim.npz",
+      "present": true
+    }
+  ],
+  "reference2d": "../pilot/poses-tracked.jsonl",
+  "participants": {
+    "1": "instructor, black shirt / beige trousers",
+    "2": "grey shirt / black trousers",
+    "3": "blue shirt / beige trousers",
+    "4": "white shirt / camouflage trousers"
+  },
+  "identityMapping3d": {
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4
+  },
+  "reviewRequired": [
+    "Depth and metric scale are estimates, not measured distances.",
+    "Hidden limbs can follow a foreground participant during overlap; compare the source before interpreting contact.",
+    "Faded poses flag interpolated tracking boxes or large source-box overlap, not measured visibility.",
+    "Contact and full-frame identity accuracy remain unverified."
+  ],
+  "deliverablesPending": [],
+  "scene": "scene.json",
+  "prototypeReady": true,
+  "deliverables": [
+    "scene.json",
+    "orbitable synchronized viewer",
+    "reconstruction-reviewed-ids/world4d.glb",
+    "reconstruction-reviewed-ids/world4d.mcs",
+    "scene-validation.json"
+  ],
+  "reviewAnchors": [
+    18,
+    19,
+    20.5,
+    22.5,
+    24,
+    25.5,
+    27,
+    28,
+    29.966666666666665
+  ],
+  "limitationsObserved": [
+    "At 25.5 seconds white is hidden and uses interpolated boxes; at 27 seconds grey is hidden and uses interpolated boxes.",
+    "At 29.967 seconds the blue participant pose drifts onto foreground white despite a correct source identity label.",
+    "Instructor and grey stop rendering after source track frames 343 and 350; white begins at frame 26."
+  ]
+}

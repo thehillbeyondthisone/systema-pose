@@ -1,0 +1,38 @@
+# Local identities, requests, annotations, recordings, and prepared lessons.
+/teaching_suite/data/
+/teaching_suite/published/
+
+# Keep project scripts; exclude installed runtimes, models, caches, and reports.
+/work/*
+!/work/*.py
+!/work/*.cjs
+!/work/*.sh
+!/work/*.ps1
+!/work/PromptHMR.Dockerfile
+!/work/.dockerignore
+
+# Bundle only the assets needed to view the sample lesson.
+/outputs/*
+!/outputs/pilot/
+/outputs/pilot/*
+!/outputs/pilot/source-reference.mp4
+!/outputs/pilot/README.md
+!/outputs/3d-pilot/
+/outputs/3d-pilot/*
+!/outputs/3d-pilot/scene.json
+!/outputs/3d-pilot/manifest.json
+!/outputs/3d-pilot/README.md
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.DS_Store
+Thumbs.db

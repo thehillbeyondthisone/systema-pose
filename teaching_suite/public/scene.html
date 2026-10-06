@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Systema · Shared 3D scene</title>
+<link rel="stylesheet" href="style.css"><link rel="stylesheet" href="scene.css"><link rel="stylesheet" href="views.css">
+<script type="importmap">{"imports":{"three":"./vendor/three/three.module.js"}}</script>
+<script type="module" src="scene.js"></script></head><body>
+<header class="topbar"><a class="brand lesson-return" href="/?demo=1">SYSTEMA<span class="brand-sub">Movement lessons</span></a><a href="/?demo=1" class="file-button lesson-return">Back to lesson</a></header>
+<main><section class="lesson-heading"><div><p class="eyebrow">MULTIPLE ATTACKERS · 18–30 SECONDS</p><h1>Examine the exchange</h1><p>Compare everyone together. Orbit the scene to explore spacing and contact.</p></div></section>
+<p id="sceneStatus" class="scene-status" role="status">Loading the reconstructed scene…</p>
+<section class="workspace-controls scene-view-controls" aria-label="Scene views"><div class="view-presets" role="group" aria-label="Choose scene views"><button data-scene-view="scene" aria-pressed="false">3D scene</button><button data-scene-view="video" aria-pressed="false">Footage</button><button data-scene-view="compare" aria-pressed="true" class="active">Compare</button></div></section>
+<div id="sceneGrid" class="scene-grid"><section id="scenePanel" class="viewer-panel"><div class="view-toolbar"><strong>Shared 3D scene</strong><div class="controls" role="group" aria-label="Camera angle"><button data-camera="front" aria-pressed="true" disabled>Front</button><button data-camera="side" aria-pressed="false" disabled>Side</button><button data-camera="overhead" aria-pressed="false" disabled>Overhead</button><button id="resetCamera" disabled>Reset</button></div></div>
+<div id="orbitStage" class="orbit-stage" aria-label="Orbitable skeleton scene"><p id="emptyScene">The reconstructed scene is being prepared. The footage remains available below.</p></div>
+<div class="participant-row"><span>Show people</span><div id="scenePeople" class="participant-buttons"></div></div>
+<div class="viewer-footer"><span class="estimate-mark">3D estimates</span><span id="frameQuality">Depth, identity and contact need review against the footage.</span></div></section>
+<section id="sceneFootagePanel" class="viewer-panel"><div class="view-toolbar"><strong>Source footage</strong></div><video id="sceneVideo" src="media/source-reference.mp4" playsinline preload="metadata" controls></video></section></div>
+<div class="scene-transport"><button id="scenePlay" class="play-control" aria-label="Play movement">▶</button><span id="sceneTime">18.000s</span><button id="scenePrevious" aria-label="Previous frame">‹</button><input id="sceneScrub" type="range" min="0" max="359" value="0" aria-label="Scene frame"><button id="sceneNext" aria-label="Next frame">›</button><label>Speed <select id="sceneSpeed"><option value="1">Normal</option><option value="0.5">Half</option><option value="0.25">Quarter</option></select></label></div>
+<p id="orbitHelp" class="scene-help">Drag to orbit · Pinch to zoom · Two fingers to pan.</p>
+</main></body></html>

@@ -1,0 +1,7 @@
+**
+!PromptHMR/
+!PromptHMR/requirements.txt
+!PromptHMR/data/
+!PromptHMR/data/wheels/
+!PromptHMR/data/wheels/*.whl
+!PromptHMR.Dockerfile
