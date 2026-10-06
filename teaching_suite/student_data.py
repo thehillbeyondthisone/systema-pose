@@ -40,12 +40,6 @@ def notes(student, lesson_scope):
     return json.loads(path.read_text(encoding='utf-8')) if path.exists() else []
 
 
-def audio_folder(student):
-    path = STUDENTS / student / 'audio'
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
 def requests(student=None):
     values = [json.loads(p.read_text(encoding='utf-8')) for p in REQUESTS.glob('*.json')]
     if student:

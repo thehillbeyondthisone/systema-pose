@@ -40,12 +40,7 @@
       views = {visual:saved.visual, moment:saved.moment, list:saved.list};
     }
   } catch { /* View selection still works when browser storage is unavailable. */ }
-  const sharedAudioBase = snapshotId ? `/published/${encodeURIComponent(snapshotId)}/audio/` : '/audio/';
-  const audioBase = '/student-audio/';
-  let audioBlob = null, audioName = null, previewUrl = null;
-  let recorder = null, micStream = null, recordTimer = null, recordingPending = false;
   let toastTimer, saving = false, annotationSignature = '';
-  const audioUrl = note => (note.personal ? audioBase : sharedAudioBase) + encodeURIComponent(note.audio);
   function mergeNotes(notes) {
     ownNotes = notes.map(note => ({...note, personal:true}));
     lesson.notes = [...sharedNotes, ...ownNotes].sort((a,b) => a.start-b.start || a.id.localeCompare(b.id));
@@ -146,7 +141,7 @@
     const active = (pending ? [pending] : lesson.notes).filter(note => time >= note.start && time < note.end)
       .sort((a,b) => Number(Boolean(b.personal))-Number(Boolean(a.personal)));
     $('annotationRail').classList.toggle('compact',active.length>2);
-    const signature = JSON.stringify(active.map(note => [note.id,note.title,note.text,note.start,note.end,note.audio]));
+    const signature = JSON.stringify(active.map(note => [note.id,note.title,note.text,note.start,note.end]));
     if (signature !== annotationSignature) {
       annotationSignature = signature; $('activeAnnotations').replaceChildren();
       active.forEach(note => {
@@ -154,7 +149,7 @@
         card.className = 'annotation-callout'; card.dataset.noteId = note.id;
         if (!pending) { card.type = 'button'; card.addEventListener('click',() => openNote(note)); }
         const title = document.createElement('strong'); title.textContent = note.title;
-        const text = document.createElement('span'); text.className = 'callout-text'; text.textContent = note.text || '♪ Voice annotation';
+        const text = document.createElement('span'); text.className = 'callout-text'; text.textContent = note.text || 'This older annotation has no text explanation.';
         const target = document.createElement('span'); target.className = 'callout-target';
         card.append(title,text,target); $('activeAnnotations').append(card);
       });
@@ -211,7 +206,6 @@
     render();
   }
   async function play() {
-    $('detailAudio').pause(); $('editorAudio').pause();
     try { await video.play(); } catch { toast('Tap Play again to start the footage.'); }
   }
   function renderList() {
@@ -226,8 +220,7 @@
       const meta = document.createElement('span'); meta.className = 'note-meta'; meta.textContent = `${seconds(note.start)}–${seconds(note.end)} · ${noteTarget(note)}`;
       if (note.personal) { const badge = document.createElement('span'); badge.className = 'personal-label'; badge.textContent = 'Yours'; meta.append(badge); }
       if (note.sample) { const badge = document.createElement('span'); badge.className = 'sample-label'; badge.textContent = 'Sample'; meta.append(badge); }
-      if (note.audio) { const voice = document.createElement('span'); voice.className = 'voice-label'; voice.textContent = '♪ Voice'; meta.append(voice); }
-      const excerpt = document.createElement('span'); excerpt.className = 'note-excerpt'; excerpt.textContent = note.text.length > 145 ? note.text.slice(0,142)+'…' : note.text || 'Open to listen to the explanation.';
+      const excerpt = document.createElement('span'); excerpt.className = 'note-excerpt'; excerpt.textContent = note.text.length > 145 ? note.text.slice(0,142)+'…' : note.text || 'This older annotation has no text explanation.';
       content.append(title,meta,excerpt); card.append(number,content);
       card.addEventListener('click',() => openNote(note)); list.append(card);
       const duration = motion.sourceEnd-motion.sourceStart;
@@ -241,7 +234,7 @@
     }
   }
   function closeDetail() {
-    selected = null; $('detailAudio').pause(); $('noteDetail').hidden = true;
+    selected = null; $('noteDetail').hidden = true;
     $('noteList').hidden = false; $('closeDetail').hidden = true; $('replayPassage').disabled = true;
     renderList(); render();
   }
@@ -251,21 +244,10 @@
     video.pause(); selected = note; seek(note.start);
     $('detailTitle').textContent = note.title;
     $('detailMeta').textContent = `${seconds(note.start)}–${seconds(note.end)} · ${noteTarget(note)}${note.sample ? ' · Sample prompt' : ''}`;
-    $('detailText').textContent = note.text;
-    $('detailText').hidden = !note.text;
-    const audio = $('detailAudio'); audio.pause(); audio.removeAttribute('src');
-    audio.hidden = !note.audio; if (note.audio) audio.src = audioUrl(note);
+    $('detailText').textContent = note.text || 'This older annotation has no text explanation. Edit it to add your observation.';
     $('noteList').hidden = true; $('noteDetail').hidden = false; $('closeDetail').hidden = false;
     $('detailAuthorActions').hidden = !note.personal;
     $('replayPassage').disabled = false; render();
-  }
-  function showAudioPreview() {
-    const audio = $('editorAudio'); audio.pause();
-    if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
-    audio.removeAttribute('src'); audio.hidden = !audioBlob && !audioName;
-    if (audioBlob) { previewUrl = URL.createObjectURL(audioBlob); audio.src = previewUrl; }
-    else if (audioName) audio.src = audioBase + encodeURIComponent(audioName);
-    $('removeAudio').hidden = !audioBlob && !audioName;
   }
   function error(message) { $('editorError').textContent = message; $('editorError').hidden = false; }
   function updateTarget() {
@@ -281,11 +263,12 @@
     render();
   }
   function beginEdit(note = null) {
-    if (saving || recordingPending || (note && !note.personal)) return;
-    video.pause(); $('detailAudio').pause();
+    if (saving || (note && !note.personal)) return;
+    video.pause();
     const start = Math.min(motion.sourceEnd-1/motion.fps,Number(sourceTime().toFixed(3)));
-    draft = note ? structuredClone(note) : {title:'',text:'',start,end:Math.min(motion.sourceEnd,start+2),trackId:0,jointIndex:null,anchor:{x:.5,y:.5},audio:null};
-    selected = null; audioBlob = null; audioName = draft.audio || null;
+    draft = note ? structuredClone(note) : {title:'',text:'',start,end:Math.min(motion.sourceEnd,start+2),trackId:0,jointIndex:null,anchor:{x:.5,y:.5}};
+    delete draft.audio;
+    selected = null;
     $('editorHeading').textContent = note ? 'Edit annotation' : 'Add annotation';
     $('noteTitle').value = draft.title; $('noteText').value = draft.text;
     $('noteStart').value = String(draft.start); $('noteEnd').value = String(draft.end);
@@ -293,75 +276,26 @@
     $('noteList').hidden = true; $('noteDetail').hidden = true; $('closeDetail').hidden = true;
     $('noteEditor').hidden = false; $('placementHint').hidden = false; $('addNote').disabled = true;
     $('replayPassage').disabled = true; $('editorError').hidden = true;
-    $('recordStatus').textContent = audioName ? 'A voice explanation is attached. Play it below.' : 'Record a short explanation or attach an audio file.';
     applyViews({...views, moment:true, list:true});
-    showAudioPreview(); updateTarget();
+    updateTarget();
     if (innerWidth <= 900) $(note ? 'noteEditor' : 'stage').scrollIntoView({behavior:'smooth',block:note ? 'start' : 'center'});
   }
-  function stopRecording(discard = false) {
-    clearTimeout(recordTimer);
-    if (recorder && recorder.state !== 'inactive') { recorder.discard = discard; recorder.stop(); }
-    if (micStream) { micStream.getTracks().forEach(track => track.stop()); micStream = null; }
-    $('record').classList.remove('recording'); $('record').textContent = '● Record voice';
-  }
   function cancelEdit() {
-    if (saving || recordingPending) return;
-    stopRecording(true); draft = null; audioBlob = null; audioName = null; showAudioPreview();
+    if (saving) return;
+    draft = null;
     $('noteEditor').hidden = true; $('placementHint').hidden = true; $('addNote').disabled = false;
     $('noteList').hidden = false; applyViews(); renderList(); render();
   }
-  async function toggleRecording() {
-    if (!draft || recordingPending || saving) return;
-    if (recorder && recorder.state === 'recording') { stopRecording(); return; }
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      error('Voice recording needs a supported browser on localhost or HTTPS. You can attach a voice recording instead.'); return;
-    }
-    recordingPending = true; $('record').disabled = true; $('saveNote').disabled = true;
-    try {
-      micStream = await navigator.mediaDevices.getUserMedia({audio:true});
-      const types = ['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];
-      const mimeType = types.find(type => MediaRecorder.isTypeSupported(type));
-      const active = new MediaRecorder(micStream,mimeType ? {mimeType} : {});
-      recorder = active; const chunks = [];
-      active.addEventListener('dataavailable',event => { if (event.data.size) chunks.push(event.data); });
-      active.addEventListener('stop',() => {
-        if (recorder === active) recorder = null;
-        if (!active.discard && draft) {
-          audioBlob = new Blob(chunks,{type:active.mimeType || 'audio/webm'}); audioName = null;
-          if (!audioBlob.size) { audioBlob = null; error('The recording was empty. Try again or attach audio.'); }
-          else { $('recordStatus').textContent = 'Recording ready. Listen below, then save the note.'; showAudioPreview(); }
-        }
-        $('saveNote').disabled = false;
-      });
-      active.addEventListener('error',() => { error('The recording stopped. Try again or attach an audio file.'); stopRecording(true); });
-      active.start(); $('record').classList.add('recording'); $('record').textContent = '■ Stop recording';
-      $('recordStatus').textContent = 'Recording… Tap Stop when your explanation is complete.';
-      $('editorError').hidden = true;
-      recordTimer = setTimeout(() => { stopRecording(); toast('The three-minute recording limit was reached.'); },180000);
-    } catch (failure) {
-      stopRecording(true); $('saveNote').disabled = false;
-      error(failure.name === 'NotAllowedError' ? 'Microphone access was not allowed. Enable it in the browser or attach an audio file.' : 'The microphone could not start. Check it or attach an audio file.');
-    } finally { recordingPending = false; $('record').disabled = false; }
-  }
-  function audioType(file) {
-    const known = {'m4a':'audio/mp4','mp4':'audio/mp4','mp3':'audio/mpeg','wav':'audio/wav','ogg':'audio/ogg','webm':'audio/webm','aac':'audio/aac'};
-    return known[file.name?.split('.').pop().toLowerCase()] || file.type;
-  }
   async function saveNote() {
-    if (!draft || saving || recordingPending || recorder?.state === 'recording') return;
+    if (!draft || saving) return;
     const start = Number($('noteStart').value), end = Number($('noteEnd').value);
     const title = $('noteTitle').value.trim(), text = $('noteText').value.trim();
     if (!title) { error('Give the note a title.'); $('noteTitle').focus(); return; }
-    if (!text && !audioBlob && !audioName) { error('Add a text explanation or a voice note.'); return; }
+    if (!text) { error('Add a text explanation.'); $('noteText').focus(); return; }
     if (!(start >= motion.sourceStart && start < end && end <= motion.sourceEnd)) { error(`Choose a time range within ${motion.sourceStart}–${motion.sourceEnd} seconds, with an end after the start.`); return; }
     saving = true; $('saveNote').disabled = true; $('cancelEdit').disabled = true; $('saveState').textContent = 'Saving…';
     try {
-      if (audioBlob) {
-        if (audioBlob.size > 20*1024*1024) throw new Error('Choose an audio file smaller than 20 MB.');
-        const uploaded = await json('/api/audio',{method:'POST',headers:{'Content-Type':audioType(audioBlob)},body:audioBlob});
-        audioName = uploaded.audio;
-      }
-      const result = await post(api('/api/notes'),{...draft,title,text,start,end,audio:audioName});
+      const result = await post(api('/api/notes'),{...draft,title,text,start,end});
       mergeNotes(result.notes); const note = ownNotes.find(n => n.id === result.note.id);
       saving = false; cancelEdit(); openNote(note);
       $('saveState').textContent = 'Annotation saved'; toast('Your annotation is saved.');
@@ -377,7 +311,9 @@
         lesson = await json(api('/api/lesson'));
       }
       if (projectId && lesson.status !== 'ready') throw new Error('This lesson is still being prepared. Return to the lesson library.');
-      sharedNotes = (lesson.notes || []).map(note => ({...note,personal:false}));
+      sharedNotes = (lesson.notes || []).map(note => ({...note,personal:false,
+        text:note.sample && note.id==='sample-hands' && note.text.includes('attach a voice or text explanation')
+          ? 'Sample prompt: Add a text explanation to this hand and this moment. The marker follows the joint estimate when one is available.' : note.text}));
       const personal = await json(api('/api/annotations'));
       mergeNotes(personal.notes);
       if ($('sceneLink') && !projectId && !snapshotId && lesson.schemaVersion !== 2) {
@@ -408,7 +344,7 @@
       $('noteStart').min = String(motion.sourceStart); $('noteStart').max = String(motion.sourceEnd-1/motion.fps);
       $('noteEnd').min = String(motion.sourceStart+1/motion.fps); $('noteEnd').max = String(motion.sourceEnd);
       $('lessonTitle').textContent = lesson.title;
-      $('lessonDescription').textContent = 'Explore the movement. Pause to add your own text or voice annotations.';
+      $('lessonDescription').textContent = 'Explore the movement. Pause to add your own text annotations.';
       canvas.width = motion.width; canvas.height = motion.height;
       $('scrub').max = String(frameCount-1);
       joints.forEach((name,index) => { const option = document.createElement('option'); option.value = String(index); option.textContent = name; $('noteJoint').append(option); });
@@ -497,17 +433,6 @@
     updateTarget();
     if (innerWidth <= 900) $('noteEditor').scrollIntoView({behavior:'smooth',block:'start'});
   });
-  $('record').addEventListener('click',toggleRecording);
-  $('audioFile').addEventListener('change',() => {
-    const file = $('audioFile').files[0]; $('audioFile').value = '';
-    if (!file || !draft) return;
-    if (recorder?.state === 'recording') { error('Stop the recording before attaching another audio file.'); return; }
-    if (file.size > 20*1024*1024) { error('Choose an audio file smaller than 20 MB.'); return; }
-    audioBlob = file; audioName = null; $('recordStatus').textContent = `Attached: ${file.name}. Listen below, then save the note.`;
-    $('editorError').hidden = true; showAudioPreview();
-  });
-  $('removeAudio').addEventListener('click',() => { if (recorder?.state === 'recording') return; audioBlob = null; audioName = null; showAudioPreview(); $('recordStatus').textContent = 'Record a short explanation or attach an audio file.'; });
-  $('detailAudio').addEventListener('play',() => video.pause()); $('editorAudio').addEventListener('play',() => video.pause());
   $('deleteNote').addEventListener('click',async () => {
     if (!selected?.personal || !confirm(`Delete your annotation “${selected.title}”?`)) return;
     $('deleteNote').disabled = true;
@@ -523,7 +448,6 @@
     if (event.code === 'Space') { event.preventDefault(); $('play').click(); }
     if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') { event.preventDefault(); $(event.code === 'ArrowLeft' ? 'previousFrame' : 'nextFrame').click(); }
   });
-  window.addEventListener('pagehide',() => { stopRecording(true); if (previewUrl) URL.revokeObjectURL(previewUrl); });
   applyViews();
   initialize();
 })();

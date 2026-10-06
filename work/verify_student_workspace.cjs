@@ -26,7 +26,7 @@ const log = fs.createWriteStream(path.join(OUT,'server.log'));
 server.stdout.pipe(log);server.stderr.pipe(log);
 let browser;
 function pass(name){results.checks.push(name);console.log('PASS '+name);}
-async function ready(){for(let i=0;i<50;i++){try{if((await fetch(BASE+'/api/projects')).ok)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Server did not start');}
+async function ready(){let lastError;for(let i=0;i<150;i++){try{if((await fetch(BASE+'/api/projects')).ok)return;}catch(error){lastError=error;}await new Promise(r=>setTimeout(r,100));}throw Error('Server did not start',{cause:lastError});}
 async function load(page,url=BASE+'/?demo=1'){
   await page.goto(url,{waitUntil:'domcontentloaded'});
   await page.waitForFunction(()=>!document.getElementById('addNote').disabled && document.getElementById('participants').children.length>0 && document.getElementById('video').readyState>=2);
@@ -48,8 +48,8 @@ function status(id,value,lesson){
 (async()=>{
   try {
     await ready();
-    browser=await chromium.launch({channel:'msedge',headless:true,args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});
-    const a=await browser.newContext({viewport:{width:1440,height:960},permissions:['microphone']});
+    browser=await chromium.launch({channel:'msedge',headless:true});
+    const a=await browser.newContext({viewport:{width:1440,height:960}});
     const b=await browser.newContext({viewport:{width:1440,height:960}});
     const page=await a.newPage(), other=await b.newPage();
     for(const p of [page,other])p.on('pageerror',error=>results.consoleErrors.push(error.message));
@@ -114,18 +114,26 @@ function status(id,value,lesson){
     await page.locator('#play').click();await page.locator('#loopPassage').uncheck();
     pass('Students create, edit and reload personal annotations; yellow lines follow joints only during the chosen range');
 
-    await page.locator('#closeDetail').click();await scrub(page,60);await page.locator('#addNote').click();
-    await page.locator('#noteTitle').fill('Voice observation');await page.locator('#record').click();await page.waitForSelector('#record.recording');
-    await page.waitForTimeout(1200);await page.locator('#record').click();
-    await page.waitForFunction(()=>!document.getElementById('saveNote').disabled&&!document.getElementById('editorAudio').hidden);
-    await page.locator('#saveNote').click();await page.waitForSelector('#noteDetail:not([hidden])');
-    const voice=(await annotations(a)).notes.find(n=>n.title==='Voice observation');assert(voice.audio);
-    assert.equal((await a.request.get(BASE+'/student-audio/'+voice.audio)).status(),200);
-    assert.equal((await b.request.get(BASE+'/student-audio/'+voice.audio)).status(),404);
-    assert.equal((await post(b,'/api/notes',{...note,title:'Borrowed voice',audio:voice.audio})).status(),400);
-    await page.waitForFunction(()=>document.getElementById('detailAudio').readyState>=1);
-    assert(await page.locator('#detailAudio').evaluate(audio=>audio.duration>0));
-    pass('Voice annotations record, decode and remain private to the submitting browser');
+    assert.equal(await page.locator('#record,#audioFile,#detailAudio,#editorAudio').count(),0);
+    assert.equal((await a.request.post(BASE+'/api/audio',{data:Buffer.from('old audio'),headers:{'Content-Type':'audio/wav'}})).status(),410);
+    assert.equal((await post(a,'/api/notes',{...note,text:'',audio:'old.wav'})).status(),400);
+    assert.equal((await post(a,'/api/notes',{...note,audio:'old.wav'})).status(),400);
+    const student=(await a.cookies()).find(cookie=>cookie.name==='systema_student').value;
+    const legacyPath=path.join(DATA,'students',student,'sample.json');
+    const legacyAudio=path.join(DATA,'students',student,'audio','old.wav');
+    fs.mkdirSync(path.dirname(legacyAudio),{recursive:true});fs.writeFileSync(legacyAudio,'existing recording');
+    fs.writeFileSync(legacyPath,JSON.stringify([...(await annotations(a)).notes,{...note,id:'legacy-audio',title:'Older observation',text:'',audio:'old.wav'}]));
+    assert.equal((await a.request.get(BASE+'/student-audio/old.wav')).status(),404);
+    await page.reload();await page.waitForSelector('.note-card[data-note-id="legacy-audio"]');
+    await page.locator('.note-card[data-note-id="legacy-audio"]').click();
+    assert((await page.locator('#detailText').textContent()).includes('no text explanation'));
+    await page.locator('#editNote').click();await page.locator('#saveNote').click();
+    assert.equal(await page.locator('#editorError').textContent(),'Add a text explanation.');
+    await page.locator('#noteText').fill('Text added to an older observation.');await page.locator('#saveNote').click();
+    await page.waitForSelector('#noteDetail:not([hidden])');
+    assert(!(await annotations(a)).notes.find(n=>n.id==='legacy-audio').audio);
+    assert.equal(fs.readFileSync(legacyAudio,'utf8'),'existing recording');
+    pass('Annotations work over HTTP without microphone controls; audio uploads are disabled and older notes can become text without deleting files');
 
     await page.locator('#closeDetail').click();await scrub(page,250);
     const sceneNote=(await (await post(a,'/api/notes',{...note,title:'Scene observation',trackId:0,jointIndex:null,anchor:{x:.15,y:.25},start:25.8,end:27.8})).json()).note;

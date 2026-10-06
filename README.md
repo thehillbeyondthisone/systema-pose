@@ -1,7 +1,7 @@
 # Systema Pose
 
 A local movement study workspace for watching prepared video lessons, comparing
-2D and 3D motion estimates, and adding personal text or voice annotations.
+2D and 3D motion estimates, and adding personal text annotations.
 Students can request a video by link; the teacher reviews and processes requests
 on the workstation.
 
@@ -24,9 +24,19 @@ On systems with `python3`, use `python3 teaching_suite/server.py` instead.
 Open http://127.0.0.1:8770/ and choose **Explore the sample lesson**.
 
 Use **Watch**, **Study motion**, and **Annotate** to switch workspaces. Pause at a
-moment and choose **Add annotation** to attach text or audio to a participant,
+moment and choose **Add annotation** to attach text to a participant,
 body part, or scene point. **Views → Explore in 3D** opens the sample's synchronized
 orbitable scene.
+
+In the 3D viewer, enable **Contact effects** to draw bones with visible thickness.
+Intersecting bones glow yellow and orange spots identify their intersection
+regions. The test uses 3D bone capsules between distinct visible participants,
+including endpoint spheres; screen overlap alone cannot trigger it. **Bone
+thickness** changes both the visible shapes and their intersection bounds.
+Effects follow the current frame, participant visibility, and playback; choices
+are remembered in the browser. This is available for the included 3D sample.
+These intersections describe the reconstruction, not verified physical contact,
+force, strikes, grabs, or a participant's felt body position.
 
 The repository includes the 12-second sample reference video, 2D motion data,
 3D skeleton scene, and vendored Three.js viewer with its license and provenance.
@@ -34,7 +44,7 @@ The server creates its initial sample prompts and local storage on first launch.
 
 ## Personal data and local files
 
-Annotations, audio, and video requests are stored under `teaching_suite/data/`.
+Annotations and video requests are stored under `teaching_suite/data/`.
 A persistent browser cookie identifies the student; there are no accounts or
 cross-device sign-in. Return using the same browser and server address to find
 your annotations. Back up this folder separately if the data matters.
@@ -44,8 +54,9 @@ are stored separately in `teaching_suite/published/`. Both folders are excluded
 from Git, along with installed runtimes, model weights, caches, and generated
 exports. Committing the project does not back up these local files.
 
-Microphone recording on another device generally requires HTTPS; audio-file
-attachments are supported. The current server is a local/LAN prototype. A hosted
+Annotations are text-only and work over HTTP on the local network. Older audio
+files remain on disk, but recording, attachments, and audio playback are removed.
+The current server is a local/LAN prototype. A hosted
 service would need authentication, teacher authorization, and HTTPS.
 
 ## Prepare new footage
@@ -95,7 +106,12 @@ The view-selection check expects an isolated server on port 8772, or a URL suppl
 through `SYSTEMA_TEST_URL`. Reports and screenshots are generated locally under
 `outputs/` and excluded from Git.
 
-These checks use emulated device sizes and a synthetic microphone. They do not
+Run `node work/verify_contact_geometry.cjs` for the intersection geometry checks,
+including 3D crossings, separated depth, parallel bones, endpoints, and
+zero-length bones. The view-selection checks also exercise contact visibility,
+thickness, remembered settings, and independence from camera angle.
+
+These checks use emulated device sizes. They do not
 establish real iPad Safari compatibility or pose accuracy. Depth, metric scale,
 identity tracking during overlap, and contact remain estimates; compare the
 skeleton with the source footage when interpreting movement.
