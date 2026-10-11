@@ -8,6 +8,7 @@
 *.css text eol=lf
 *.md text eol=lf
 *.json text eol=lf
+*.yml text eol=lf
 *.bat text eol=crlf
 *.mp4 binary
 *.mov binary

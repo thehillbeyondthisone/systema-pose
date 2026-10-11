@@ -23,7 +23,8 @@ function changeContactSettings(){
 }
 $('contactEffects').addEventListener('change',changeContactSettings);
 $('boneThickness').addEventListener('change',changeContactSettings);
-const sourceStart=18, fps=30;
+const site=window.SystemaSite;
+let sourceStart=18, sourceEnd=30, fps=30, frameCount=360, siteLesson=null;
 const sceneStorageKey='systema-scene-view-v1';
 let sceneView=innerWidth<=600?'scene':'compare';
 try{const saved=localStorage.getItem(sceneStorageKey);if(['scene','video','compare'].includes(saved))sceneView=saved;}catch{}
@@ -37,10 +38,10 @@ function applySceneView(value){
   try{localStorage.setItem(sceneStorageKey,value);}catch{}
 }
 document.querySelectorAll('[data-scene-view]').forEach(button=>button.addEventListener('click',()=>applySceneView(button.dataset.sceneView)));
-document.querySelectorAll('.lesson-return').forEach(link=>link.addEventListener('click',()=>{link.href=`/?demo=1&frame=${frame}`;}));
+document.querySelectorAll('.lesson-return').forEach(link=>link.addEventListener('click',()=>{link.href=site&&siteLesson ? site.link('lesson.html',siteLesson.id,frame) : `/?demo=1&frame=${frame}`;}));
 applySceneView(sceneView);
 const entryFrame=Number(new URLSearchParams(location.search).get('frame'));
-if(Number.isInteger(entryFrame)&&entryFrame>=0&&entryFrame<=359){
+if(!site&&Number.isInteger(entryFrame)&&entryFrame>=0&&entryFrame<frameCount){
   if(video.readyState>=1)seek(entryFrame);
   else video.addEventListener('loadedmetadata',()=>seek(entryFrame),{once:true});
 }
@@ -53,7 +54,7 @@ function sceneUnavailable(){
 }
 
 function showFrame(index){
-  frame=Math.max(0,Math.min(359,index));scrub.value=frame;
+  frame=Math.max(0,Math.min(frameCount-1,index));scrub.value=frame;
   $('sceneTime').textContent=`${(sourceStart+frame/fps).toFixed(3)}s`;
   if(!motion)return;
   const signature=JSON.stringify([frame,contactSettings,[...objects.values()].map(object=>object.checkbox.checked)]);
@@ -130,7 +131,7 @@ function showContacts(){
     $('contactList').append(item);
   }
 }
-function seek(index){video.pause();video.currentTime=Math.max(0,Math.min(359,index))/fps;showFrame(index);}
+function seek(index){video.pause();video.currentTime=Math.max(0,Math.min(frameCount-1,index))/fps;showFrame(index);}
 scrub.addEventListener('input',()=>seek(Number(scrub.value)));
 $('scenePrevious').addEventListener('click',()=>seek(frame-1));
 $('sceneNext').addEventListener('click',()=>seek(frame+1));
@@ -162,7 +163,7 @@ function preset(name){
 }
 function validate(data){
   if(data.coordinateSpace!=='world-3d'||data.units!=='model-meters'||data.upAxis!=='y')throw Error('Unsupported scene coordinates.');
-  if(data.sourceStart!==18||data.sourceEnd!==30||Math.abs(data.fps-30)>0.001||data.frames.length!==360)throw Error('Scene timing does not match this clip.');
+  if(data.sourceStart!==sourceStart||data.sourceEnd!==sourceEnd||Math.abs(data.fps-fps)>0.001||data.frames.length!==frameCount)throw Error('Scene timing does not match this clip.');
   if(!data.people.length||!data.jointNames.length)throw Error('No reconstructed participants are available.');
   const ids=new Set(data.people.map(p=>String(p.id))), count=data.jointNames.length;
   if(ids.size!==data.people.length)throw Error('Duplicate participant identities.');
@@ -178,11 +179,25 @@ function validate(data){
 }
 async function load(){
   try{
-    const response=await fetch('/3d-pilot/scene.json',{cache:'no-store'});
+    if(site){
+      siteLesson=await site.lesson();
+      sourceStart=siteLesson.sourceStart;sourceEnd=siteLesson.sourceEnd;fps=siteLesson.fps;
+      frameCount=Math.ceil((sourceEnd-sourceStart)*fps);scrub.max=String(frameCount-1);
+      document.querySelector('h1').textContent=siteLesson.title;
+      document.querySelector('.lesson-heading .eyebrow').textContent=`${siteLesson.category.toUpperCase()} · 3D SCENE`;
+      document.querySelectorAll('.lesson-return').forEach(link=>{link.href=site.link('lesson.html',siteLesson.id);});
+      video.src=siteLesson.video;
+      if(Number.isInteger(entryFrame)&&entryFrame>=0&&entryFrame<frameCount){
+        if(video.readyState>=1)seek(entryFrame);
+        else video.addEventListener('loadedmetadata',()=>seek(entryFrame),{once:true});
+      }
+      if(!siteLesson.scene)throw Error('This clip has 2D motion only. Return to the lesson to study it.');
+    }
+    const response=await fetch(site?siteLesson.scene:'/3d-pilot/scene.json',{cache:'no-store'});
     if(response.status===404){$('sceneStatus').textContent='The shared 3D reconstruction is not ready yet. You can review the current footage here.';sceneUnavailable();return;}
     if(!response.ok)throw Error('Scene could not be loaded.');
     const data=await response.json();validate(data);
-    const manifest=await (await fetch('/3d-pilot/manifest.json',{cache:'no-store'})).json();
+    const manifest=await (await fetch(site?siteLesson.manifest:'/3d-pilot/manifest.json',{cache:'no-store'})).json();
     if(data.sourceSha256!==manifest.sha256)throw Error('Scene and footage do not match.');
     const expected=manifest.reconstruction?.expectedParticipants;
     if(Number.isInteger(expected)&&data.people.length!==expected)throw Error(`The scene is being extended to all ${expected} participants.`);

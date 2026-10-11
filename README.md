@@ -5,6 +5,10 @@ A local movement study workspace for watching prepared video lessons, comparing
 Students can request a video by link; the teacher reviews and processes requests
 on the workstation.
 
+The [shareable class viewer](site/README.md) builds a static clip library for
+GitHub Pages. It includes browser-saved annotations with backup/restore and
+optional 3D contact effects. New prepared clips are listed in `site/lessons.json`.
+
 ## Start the sample lesson
 
 Install Python 3.10 or newer. Viewing the included sample and saving annotations

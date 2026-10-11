@@ -1,6 +1,7 @@
 # Local identities, requests, annotations, recordings, and prepared lessons.
 /teaching_suite/data/
 /teaching_suite/published/
+/dist/
 
 # Keep project scripts; exclude installed runtimes, models, caches, and reports.
 /work/*

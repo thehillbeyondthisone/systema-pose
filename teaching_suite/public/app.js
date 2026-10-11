@@ -3,6 +3,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const query = new URLSearchParams(location.search);
+  const site = window.SystemaSite;
   const snapshotId = query.get('lesson');
   const projectId = query.get('project');
   const api = path => path + (projectId ? '?project=' + encodeURIComponent(projectId) : snapshotId ? '?lesson=' + encodeURIComponent(snapshotId) : '');
@@ -83,6 +84,7 @@
   }
   function closeViews() { $('viewPicker').close(); }
   async function json(url, options) {
+    if (site && url.startsWith('/api/')) return site.request(url, options);
     const response = await fetch(url, options);
     const value = await response.json();
     if (!response.ok) throw new Error(value.error || 'The lesson could not load.');
@@ -304,7 +306,9 @@
   }
   async function initialize() {
     try {
-      if (snapshotId) {
+      if (site) {
+        lesson = await site.lesson();
+      } else if (snapshotId) {
         if (!/^[a-zA-Z0-9_-]{1,80}$/.test(snapshotId)) throw new Error('This class lesson link is invalid.');
         lesson = await json(`/published/${snapshotId}/lesson.json`);
       } else {
@@ -316,14 +320,18 @@
           ? 'Sample prompt: Add a text explanation to this hand and this moment. The marker follows the joint estimate when one is available.' : note.text}));
       const personal = await json(api('/api/annotations'));
       mergeNotes(personal.notes);
-      if ($('sceneLink') && !projectId && !snapshotId && lesson.schemaVersion !== 2) {
+      if (site) {
+        $('sceneLink').hidden = !lesson.scene;
+        document.querySelector('.author-footer p').textContent = 'Your annotations stay in this browser on this device. Back them up before clearing site data or switching browsers.';
+        $('noteBackup').hidden = false;
+      } else if ($('sceneLink') && !projectId && !snapshotId && lesson.schemaVersion !== 2) {
         fetch('/3d-pilot/manifest.json', {cache:'no-store'}).then(response => response.ok ? response.json() : null).then(manifest => {
           if (manifest?.status === 'reconstructed_awaiting_review') $('sceneLink').hidden = false;
         }).catch(() => {});
       }
-      motion = await json(snapshotId && lesson.schemaVersion === 2 ? `/published/${snapshotId}/motion.json` : lesson.motion || 'motion.json');
+      motion = await json(!site && snapshotId && lesson.schemaVersion === 2 ? `/published/${snapshotId}/motion.json` : lesson.motion || 'motion.json');
       if (lesson.schemaVersion === 2) {
-        video.src = snapshotId ? `/published/${snapshotId}/source.mp4` : lesson.video;
+        video.src = !site && snapshotId ? `/published/${snapshotId}/source.mp4` : lesson.video;
         people.length = 1; shown.clear();
         $('notePerson').replaceChildren();
         const scene = document.createElement('option'); scene.value = '0'; scene.textContent = 'A point in the scene'; $('notePerson').append(scene);
@@ -334,7 +342,7 @@
         $('lessonTitle').textContent = lesson.title;
         $('lessonDescription').textContent = 'Review the skeletons in your selected passages. Pause to add an explanation.';
         $('lessonEyebrow').textContent = 'YOUR MOVEMENT LESSON';
-        $('lessonDuration').textContent = `${motion.sourceEnd.toFixed(1)} seconds`;
+        $('lessonDuration').textContent = `${(motion.sourceEnd-motion.sourceStart).toFixed(1)} seconds`;
         $('participantCount').textContent = `${lesson.people.length} estimated tracks`;
         $('stage').style.aspectRatio = `${motion.width} / ${motion.height}`;
       }
@@ -344,7 +352,8 @@
       $('noteStart').min = String(motion.sourceStart); $('noteStart').max = String(motion.sourceEnd-1/motion.fps);
       $('noteEnd').min = String(motion.sourceStart+1/motion.fps); $('noteEnd').max = String(motion.sourceEnd);
       $('lessonTitle').textContent = lesson.title;
-      $('lessonDescription').textContent = 'Explore the movement. Pause to add your own text annotations.';
+      $('lessonDescription').textContent = site ? lesson.description : 'Explore the movement. Pause to add your own text annotations.';
+      if (site) $('lessonEyebrow').textContent = `${lesson.category.toUpperCase()} · MOVEMENT LESSON`;
       canvas.width = motion.width; canvas.height = motion.height;
       $('scrub').max = String(frameCount-1);
       joints.forEach((name,index) => { const option = document.createElement('option'); option.value = String(index); option.textContent = name; $('noteJoint').append(option); });
@@ -402,7 +411,7 @@
   $('showAnnotationList').addEventListener('change',() => applyViews({...views, list:$('showAnnotationList').checked}));
   $('sceneLink').addEventListener('click',event => {
     if (draft) { event.preventDefault(); toast('Save or cancel your annotation before opening the 3D scene.'); return; }
-    $('sceneLink').href = `/scene.html?frame=${frameIndex}`;
+    $('sceneLink').href = site ? site.link('scene.html',lesson.id,frameIndex) : `/scene.html?frame=${frameIndex}`;
   });
   $('closeDetail').addEventListener('click',closeDetail);
   $('jumpToNote').addEventListener('click',() => { if (selected) { video.pause(); seek(selected.start); if (innerWidth <= 900) $('stage').scrollIntoView({behavior:'smooth',block:'center'}); } });
@@ -410,6 +419,19 @@
   $('editNote').addEventListener('click',() => { if (selected) beginEdit(selected); });
   $('cancelEdit').addEventListener('click',cancelEdit);
   $('saveNote').addEventListener('click',saveNote);
+  $('exportNotes').addEventListener('click',async () => {
+    try { await site.exportNotes(); toast('Notes backup downloaded.'); }
+    catch (failure) { toast(failure.message); }
+  });
+  $('importNotes').addEventListener('click',() => {
+    if (draft) { toast('Save or cancel your draft before restoring notes.'); return; }
+    $('notesFile').click();
+  });
+  $('notesFile').addEventListener('change',async () => {
+    try { const result = await site.importNotes($('notesFile').files[0]); mergeNotes(result.notes); closeDetail(); render(); toast('Notes restored. Existing observations were kept.'); }
+    catch (failure) { toast(failure.message); }
+    finally { $('notesFile').value = ''; }
+  });
   $('notePerson').addEventListener('change',updateTarget); $('noteJoint').addEventListener('change',updateTarget);
   $('startHere').addEventListener('click',() => { $('noteStart').value = Math.min(motion.sourceEnd-1/motion.fps,sourceTime()).toFixed(3); });
   $('endHere').addEventListener('click',() => { $('noteEnd').value = Math.min(motion.sourceEnd,sourceTime()+1/motion.fps).toFixed(3); });
