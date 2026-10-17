@@ -29,25 +29,31 @@ function missing(asset){return Array.isArray(asset?.missingRequired)?asset.missi
 function id(){
   return globalThis.crypto?.randomUUID?.()||`model-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,12)}`;
 }
+function webLink(value){
+  try{const url=new URL(value);return /^https?:$/.test(url.protocol)?url.href:null;}catch{return null;}
+}
 
 /**
- * Browser-local GLB assets shared by every clip on this origin. Model bytes are
- * stored only in IndexedDB; selecting a file never sends it to a server.
+ * Built-in and browser-local GLB assets shared by every clip on this origin.
+ * Only uploaded model bytes are stored in IndexedDB; built-ins load from the
+ * published site. Selecting a file never sends it to a server.
  *
  * onChange({type,id}) announces add/remove/mapping/settings; onApply(id,personId)
  * requests a figure swap (an omitted personId means all participants).
  */
 export class ModelLibrary{
-  constructor({container,motion,onChange=()=>{},onApply=()=>{}}={}){
+  constructor({container,motion,onChange=()=>{},onApply=()=>{},builtinCatalog='characters/catalog.json'}={}){
     if(!container||!motion?.people)throw Error('The model library needs a scene and a container.');
     this.motion=motion;this.onChange=onChange;this.onApply=onApply;
     this.assets=new Map();this.records=new Map();this.failures=new Map();this.cards=new Map();
+    this.builtinCatalog=builtinCatalog;this.builtins=new Map();this.builtinFailures=new Map();this.builtinCards=new Map();
     this.db=null;this.storageAvailable=true;this.busy=false;this.destroyed=false;this.restored=false;
     this.prefix=libraryCount++?`model${libraryCount}`:'model';
     this.mount(container);
   }
 
   get(modelId){return this.assets.get(modelId);}
+  getBuiltinEntries(){return [...this.builtins.values()];}
   hasReady(modelId){const asset=this.get(modelId);return Boolean(asset&&missing(asset).length===0);}
   setStatus(message,isError=false){
     if(!this.status)return;
@@ -60,6 +66,14 @@ export class ModelLibrary{
 
   mount(container){
     this.container=container;this.root=element('div','model-library');container.replaceChildren(this.root);
+    this.builtinSection=element('section','builtin-models');this.builtinSection.setAttribute('aria-label','Built-in characters');
+    this.builtinSection.append(element('h3','','Try a character'));
+    this.builtinSection.append(element('p','model-help','Free rigged characters, ready for captured motion. Swap everyone or choose a participant while playback continues.'));
+    this.builtinGrid=element('div','builtin-model-grid');this.builtinGrid.id=libraryCount===1?'builtinModels':this.prefix+'BuiltinModels';
+    this.builtinStatus=element('p','model-status');this.builtinStatus.setAttribute('role','status');this.builtinStatus.setAttribute('aria-live','polite');
+    this.builtinStatus.textContent='Loading built-in characters…';
+    this.builtinSection.append(this.builtinGrid,this.builtinStatus);this.root.append(this.builtinSection);
+    this.root.append(element('h3','model-upload-heading','Your rigged models'));
     this.root.append(element('p','model-help','Upload a humanoid GLB, map its bones, then use it for any participant while motion keeps playing.'));
     const toolbar=element('div','model-toolbar');
     const uploadLabel=element('label','model-upload','Add rigged models ');
@@ -124,8 +138,113 @@ export class ModelLibrary{
   }
 
   async restore(){
-    if(this.restored||this.destroyed)return;
-    this.restored=true;this.busy=true;this.upload.disabled=true;
+    if(this.destroyed)return;
+    if(this.restorePromise)return this.restorePromise;
+    this.restored=true;
+    // Built-ins and saved uploads restore independently. Slow downloads do not
+    // disable uploads, and one unavailable character cannot block the others.
+    this.uploadRestorePromise=this.restoreUploadedModels();
+    this.builtinRestorePromise=this.restoreBuiltins();
+    this.restorePromise=Promise.allSettled([this.uploadRestorePromise,this.builtinRestorePromise]);
+    return this.restorePromise;
+  }
+
+  async restoreBuiltins(){
+    if(!this.builtinCatalog){this.builtinSection.hidden=true;return;}
+    const abort=new AbortController();this.builtinAbort=abort;
+    const timer=setTimeout(()=>abort.abort(),45000);
+    try{
+      const catalogURL=new URL(this.builtinCatalog,document.baseURI);
+      if(catalogURL.origin!==location.origin||!/^https?:$/.test(catalogURL.protocol))throw Error('Built-in characters must load from this site.');
+      const response=await fetch(catalogURL,{signal:abort.signal,credentials:'same-origin',redirect:'error'});
+      if(!response.ok)throw Error('The character catalog is unavailable.');
+      const catalog=await response.json();
+      if(catalog?.schemaVersion!==1||!Array.isArray(catalog.models)||catalog.models.length>12)throw Error('The character catalog could not be read.');
+      for(const entry of catalog.models){
+        if(!entry||!/^builtin-[a-z0-9_-]{1,80}$/.test(entry.id)||this.builtins.has(entry.id))throw Error('The character catalog contains an invalid or duplicate character.');
+        const modelURL=new URL(entry.file,document.baseURI);
+        if(typeof entry.file!=='string'||modelURL.origin!==location.origin||!/^https?:$/.test(modelURL.protocol)||!modelURL.pathname.toLowerCase().endsWith('.glb'))throw Error('Built-in characters must use GLB files from this site.');
+        this.builtins.set(entry.id,{...entry,name:cleanName(entry.name),description:String(entry.description||'').slice(0,300),url:modelURL.href});
+      }
+      if(this.destroyed)return;
+      this.renderBuiltins();
+      await Promise.allSettled([...this.builtins.values()].map(async entry=>{
+        let asset;
+        try{
+          const response=await fetch(entry.url,{signal:abort.signal,credentials:'same-origin',redirect:'error'});
+          if(!response.ok)throw Error('This character could not be downloaded.');
+          if(Number(response.headers.get('Content-Length'))>MAX_BYTES)throw Error('This character file is too large.');
+          const bytes=await response.arrayBuffer();
+          if(bytes.byteLength>MAX_BYTES)throw Error('This character file is too large.');
+          asset=await loadCustomModel(bytes,{name:entry.name,mapping:entry.mapping,settings:entry.settings});
+          if(missing(asset).length)throw Error('This character has an incomplete bone mapping.');
+          if(this.destroyed){asset.dispose();return;}
+          asset.id=entry.id;asset.builtin=true;
+          asset.credit={source:entry.source,creator:entry.creator,license:entry.license,licenseUrl:entry.licenseUrl};
+          this.assets.set(entry.id,asset);this.refreshBuiltinReadiness(entry.id);this.changed('add',entry.id);
+        }catch(error){
+          asset?.dispose();
+          if(!this.destroyed){this.builtinFailures.set(entry.id,errorMessage(error));this.refreshBuiltinReadiness(entry.id);}
+        }
+      }));
+      if(this.destroyed)return;
+      const count=[...this.builtins.keys()].filter(modelId=>this.hasReady(modelId)).length;
+      this.builtinStatus.dataset.error=String(this.builtinFailures.size>0);
+      this.builtinStatus.textContent=this.builtinFailures.size?
+        `${count} built-in character${count===1?'':'s'} ready. Some characters are unavailable; reload to retry. You can still upload your own models.`:
+        `${count} built-in character${count===1?'':'s'} ready. Choose one here or in Figure options.`;
+    }catch{
+      if(!this.destroyed){
+        this.builtinStatus.dataset.error='true';
+        this.builtinStatus.textContent='Built-in characters are unavailable. Reload to retry, or upload your own rigged model below.';
+      }
+    }finally{clearTimeout(timer);if(this.builtinAbort===abort)this.builtinAbort=null;}
+  }
+
+  renderBuiltins(){
+    this.builtinGrid.replaceChildren();this.builtinCards.clear();
+    for(const [modelId,entry] of this.builtins){
+      const card=element('article','builtin-model-card');card.dataset.modelId=modelId;
+      if(entry.preview){
+        const previewURL=new URL(entry.preview,document.baseURI);
+        if(previewURL.origin===location.origin&&/\.(png|jpg|webp)$/i.test(previewURL.pathname)){
+          const preview=element('img','builtin-model-preview');preview.src=previewURL.href;preview.alt=entry.name;
+          preview.width=300;preview.height=360;preview.loading='lazy';preview.decoding='async';card.append(preview);
+        }
+      }
+      card.append(element('h4','model-name',entry.name),element('p','model-help',entry.description));
+      const credit=element('p','builtin-model-credit');
+      const source=webLink(entry.source),licenseURL=webLink(entry.licenseUrl);
+      if(source){const link=element('a','',String(entry.creator||'Model source'));link.href=source;link.target='_blank';link.rel='noopener noreferrer';credit.append(link);}
+      else if(entry.creator)credit.append(document.createTextNode(String(entry.creator)));
+      if(entry.license){
+        if(credit.childNodes.length)credit.append(document.createTextNode(' · '));
+        if(licenseURL){const link=element('a','',String(entry.license));link.href=licenseURL;link.target='_blank';link.rel='noopener noreferrer';credit.append(link);}
+        else credit.append(document.createTextNode(String(entry.license)));
+      }
+      card.append(credit);
+      const state=element('p','model-status');state.dataset.modelReadiness='loading';state.setAttribute('role','status');card.append(state);
+      const actions=element('div','model-actions'),controls={card,state,applyButtons:[]};
+      const all=button('Apply to all',()=>this.apply(modelId),'apply-all');actions.append(all);controls.applyButtons.push(all);
+      const personLabel=element('label','model-participant');personLabel.append(element('span','','Participant '));
+      const personSelect=element('select');personSelect.dataset.modelParticipant='';
+      for(const person of this.motion.people){const option=element('option','',person.name||`Participant ${person.id}`);option.value=String(person.id);personSelect.append(option);}
+      personLabel.append(personSelect);actions.append(personLabel);
+      const one=button('Apply to participant',()=>this.apply(modelId,personSelect.value),'apply-person');actions.append(one);controls.applyButtons.push(one);
+      card.append(actions);this.builtinCards.set(modelId,controls);this.builtinGrid.append(card);this.refreshBuiltinReadiness(modelId);
+    }
+  }
+
+  refreshBuiltinReadiness(modelId){
+    const controls=this.builtinCards.get(modelId);if(!controls)return;
+    const ready=this.hasReady(modelId),failure=this.builtinFailures.get(modelId);
+    controls.state.dataset.modelReadiness=ready?'ready':failure?'error':'loading';controls.state.dataset.error=String(Boolean(failure));
+    controls.state.textContent=ready?'Ready · Captured body motion drives this character.':failure||'Loading character…';
+    for(const control of controls.applyButtons)control.disabled=!ready;
+  }
+
+  async restoreUploadedModels(){
+    this.busy=true;this.upload.disabled=true;
     let records=[];
     try{
       this.db=await this.openDatabase();
@@ -162,7 +281,7 @@ export class ModelLibrary{
 
   async addFiles(files){
     if(this.busy||this.destroyed||!files.length)return;
-    if(!this.restored)await this.restore();
+    if(!this.restored){this.restore();await this.uploadRestorePromise;}
     if(this.destroyed)return;
     this.busy=true;this.upload.disabled=true;
     let added=0;const errors=[];
@@ -298,8 +417,8 @@ export class ModelLibrary{
   }
 
   destroy(){
-    this.destroyed=true;this.db?.close();this.db=null;
+    this.destroyed=true;this.builtinAbort?.abort();this.db?.close();this.db=null;
     for(const asset of this.assets.values())asset.dispose();
-    this.assets.clear();this.records.clear();this.failures.clear();this.cards.clear();this.root.remove();
+    this.assets.clear();this.records.clear();this.failures.clear();this.cards.clear();this.builtins.clear();this.builtinFailures.clear();this.builtinCards.clear();this.root.remove();
   }
 }

@@ -120,6 +120,21 @@
 .strike-cues .strike-disclaimer{padding:9px 12px;background:#fff8e9;border-radius:8px;color:#705013}
 .model-disclosure{margin-top:16px;padding-top:8px;border-top:1px solid var(--line)}
 .model-disclosure>summary{font-size:.85rem;min-height:44px;align-content:center;cursor:pointer;font-weight:650}
+.builtin-models{margin:6px 0 20px}
+.builtin-models>h3{font-size:.9rem;margin:8px 0}
+.builtin-model-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:12px}
+.builtin-model-card{min-width:0;border:1px solid #d6dfeb;border-radius:10px;padding:14px;background:linear-gradient(145deg,#f7fafd,#eef3f8);overflow-wrap:anywhere}
+.builtin-model-card h3,.builtin-model-card h4{font-size:.9rem;margin:0 0 6px}
+.builtin-model-preview{display:block;width:100%;height:200px;object-fit:contain;border-radius:7px;margin-bottom:10px;background:#edf2f8}
+.builtin-model-card .model-actions{gap:8px;align-items:stretch}
+.builtin-model-card .model-actions>button:first-child{width:100%;background:#1a293f;color:#fff;border-color:#1a293f}
+.builtin-model-card label{display:grid;gap:5px;width:100%}
+.builtin-model-card select{width:100%}
+.builtin-model-card p{font-size:.78rem;line-height:1.5;margin:6px 0;color:#596a7f}
+.builtin-model-credit{font-size:.72rem;line-height:1.5}
+.builtin-model-credit a{color:#2e607e}
+.builtin-model-status{font-size:.75rem;min-height:1.5em;color:#476076}
+.builtin-models [role=status]{margin:8px 0;color:#476076}
 .model-library{font-size:.8rem;line-height:1.5;min-width:0}
 .model-library p{line-height:1.5}
 .model-help{color:var(--muted);margin:8px 0 12px}
@@ -142,6 +157,7 @@
 .model-settings label{display:grid;gap:6px;min-width:0;flex:1;max-width:240px}
 .model-card .model-actions select{max-width:340px}
 @media(max-width:800px){.model-mapping-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:900px){.builtin-model-grid{grid-template-columns:1fr}}
 @media(max-width:480px){.model-mapping-grid{grid-template-columns:1fr}.model-card{padding:12px}.model-settings label{max-width:none;flex-basis:100%}.model-toolbar{align-items:start}.model-actions{gap:8px}.model-card .model-actions select{width:100%;max-width:none}}
 @media(max-width:1100px){.figure-people{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.strike-cues .strike-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.figure-options-heading{gap:6px}.teaching-summary-hint{display:none}.scene-playback-scope{display:none}}

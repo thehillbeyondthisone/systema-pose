@@ -64,6 +64,46 @@ def poster_svg(motion, people):
             '<g fill="none" stroke-width="9" stroke-linecap="round">' + ''.join(elements) + '</g></svg>')
 
 
+def build_characters(output):
+    """Publish reviewed characters and their credits; browser uploads stay local."""
+    character_root = (PUBLIC / 'characters').resolve()
+    catalog = read_json(character_root / 'catalog.json')
+    if not isinstance(catalog, dict) or catalog.get('schemaVersion') != 1 or not isinstance(catalog.get('models'), list):
+        raise ValueError('Invalid built-in character catalog')
+    seen = set()
+    for item in catalog['models']:
+        identity = item['id']
+        if not re.fullmatch(r'builtin-[a-z0-9]+(?:-[a-z0-9]+)*', identity) or identity in seen:
+            raise ValueError('Invalid or duplicate built-in character ID')
+        seen.add(identity)
+        if not all(item.get(key) for key in ('name', 'creator', 'source', 'license', 'licenseUrl')):
+            raise ValueError('Every built-in character needs source and license credits')
+        source = (PUBLIC / item['file']).resolve()
+        if not source.is_relative_to(character_root) or source.suffix != '.glb' or not source.is_file():
+            raise ValueError('Built-in characters must be GLBs inside public/characters')
+        if source.stat().st_size > 50 * 1024 * 1024:
+            raise ValueError('Built-in character exceeds the viewer file limit')
+        if item.get('sha256') and hashlib.sha256(source.read_bytes()).hexdigest() != item['sha256']:
+            raise ValueError(f'Character hash does not match its reviewed catalog: {identity}')
+        target = output / source.relative_to(PUBLIC.resolve())
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        if item.get('preview'):
+            preview = (PUBLIC / item['preview']).resolve()
+            if not preview.is_relative_to(character_root) or preview.suffix.lower() not in ('.png', '.jpg', '.webp') or not preview.is_file():
+                raise ValueError('Character previews must be images inside public/characters')
+            target = output / preview.relative_to(PUBLIC.resolve())
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(preview, target)
+    (output / 'characters').mkdir(exist_ok=True)
+    write_json(output / 'characters/catalog.json', catalog)
+    for source in character_root.rglob('*'):
+        if source.is_file() and source.suffix.lower() in ('.md', '.txt'):
+            target = output / 'characters' / source.relative_to(character_root)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+
+
 def build(output, config_path):
     config = read_json(config_path)
     if output.exists() and any(output.iterdir()):
@@ -72,6 +112,7 @@ def build(output, config_path):
     for name in ASSETS:
         shutil.copyfile(PUBLIC / name, output / name)
     shutil.copytree(PUBLIC / 'vendor', output / 'vendor')
+    build_characters(output)
     (output / 'index.html').write_text((PUBLIC / 'library.html').read_text(encoding='utf-8'), encoding='utf-8')
     lesson_html = (PUBLIC / 'index.html').read_text(encoding='utf-8')
     lesson_html = lesson_html.replace('<script src="app.js"', '<link rel="stylesheet" href="library.css"><script src="site-data.js" defer></script><script src="app.js"')

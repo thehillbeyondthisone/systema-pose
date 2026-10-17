@@ -12,6 +12,7 @@ A movement study viewer for watching Systema lessons, exploring motion in 2D and
 - Watch the footage and step through it frame by frame.
 - Compare participants and spacing with the motion overlays or rotatable 3D view.
 - Swap skeletons for rigged figures and create replayable strike illustrations.
+- Try the included free characters from the character library.
 - Add your own rigged humanoid `.glb` models and switch them during playback.
 - Add notes to a moment or passage, then replay that passage to study it.
 - Back up your notes from inside the lesson and restore them later.
