@@ -22,5 +22,44 @@
       "maxAnchorRms": 3.595866391545733
     },
     "sourceSha256": "c827366d700bf720bc5e83a4292c5606cc9806fa5eee3955d2a72b92aa1a69f9"
+  },
+  "lighting": {
+    "method": "Three compact ceiling-emitter clusters sampled from the registered Gaussian scan; power and bounce visually matched, not recovered photometrically.",
+    "coordinateSpace": "scan-local",
+    "fixtures": [
+      {
+        "position": [
+          2.8625,
+          -0.8702,
+          -0.2114
+        ],
+        "width": 0.3,
+        "height": 0.3,
+        "color": "#fffdfb",
+        "intensity": 18
+      },
+      {
+        "position": [
+          1.4976,
+          -0.9566,
+          4.2072
+        ],
+        "width": 0.3,
+        "height": 0.3,
+        "color": "#fffdfb",
+        "intensity": 18
+      },
+      {
+        "position": [
+          -1.1268,
+          -0.9426,
+          2.3893
+        ],
+        "width": 0.3,
+        "height": 0.3,
+        "color": "#fffdfb",
+        "intensity": 18
+      }
+    ]
   }
 }

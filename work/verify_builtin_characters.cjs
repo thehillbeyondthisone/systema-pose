@@ -159,7 +159,7 @@ function inspectGLB(bytes){
   assert.equal(await page.locator('.model-card').count(),0,'Built-in cards must not count against custom uploads');
   for(const model of catalog.models){
    const builtIn=card(model.id),text=await builtIn.textContent(),links=await builtIn.locator('a').evaluateAll(anchors=>anchors.map(anchor=>anchor.href));
-   assert(text.includes(model.name));assert(text.includes(model.creator));assert(text.includes(model.license));
+   assert(text.includes(model.name));assert.equal(await builtIn.locator('a').first().getAttribute('title'),model.creator);assert.equal(await builtIn.locator('a').last().getAttribute('title'),model.license);
    assert(links.includes(model.source),`${model.name} source credit must be accessible`);assert(links.includes(model.licenseUrl),`${model.name} license must be accessible`);
    const preview=builtIn.locator('img.builtin-model-preview');assert.equal(await preview.count(),1,`${model.name} needs a gallery preview`);
    await preview.scrollIntoViewIfNeeded();await preview.evaluate(async image=>{await image.decode();});
@@ -206,7 +206,7 @@ function inspectGLB(bytes){
    const after=await videoState();assert(!after.paused);assert(after.time>=before.time-.1,'Character switches must not seek playback');
    assert.deepEqual([after.muted,after.volume,after.rate],[before.muted,before.volume,before.rate]);
   }
-  await card(second.id).locator('[data-model-participant]').selectOption('2');await card(second.id).locator('[data-model-action="apply-person"]').click();
+  await page.locator('#figure-style-2').selectOption(`model:${second.id}`);
   await page.locator('#figure-style-3').selectOption(`model:${third.id}`);await page.locator('#figure-style-4').selectOption('skeleton');
   await customCount(3);assert.equal(await page.locator('#figureStyle').inputValue(),'mixed');
   assert.equal(await page.locator('#figure-style-1').inputValue(),`model:${first.id}`);

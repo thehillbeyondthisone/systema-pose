@@ -83,8 +83,9 @@
             <p>Use a different figure for each person. Every style follows the same reconstructed motion.</p>
           </div>
           <div id="figurePeople" class="figure-people"></div>
+          <p id="characterNameStatus" class="character-name-help" role="status">Click a name to rename a character. Names are saved in this browser.</p>
           <details id="modelDetails" class="model-disclosure" open>
-            <summary>Character library <span class="teaching-summary-hint">Free characters and your own rigs</span></summary>
+            <summary>Character library <span class="teaching-summary-hint">Three built-in choices</span></summary>
             <div id="modelLibrary"><p class="teaching-help">Model library will be available when the scene is ready.</p></div>
           </details>
         </div>
@@ -127,8 +128,11 @@
           </details>
         </fieldset>
       </details>
-      <details id="contactDetails" class="contact-disclosure">
-        <summary><span>Contact visualization</span><span class="contact-summary-hint">Explore estimated intersections</span></summary>
+      <section id="debugMenu" class="scene-debug" hidden aria-labelledby="debugTitle">
+        <div class="scene-debug-heading"><h2 id="debugTitle">Debug tools</h2><button id="debugClose" aria-label="Close debug menu">Close</button></div>
+        <details id="debugUpload" open><summary>Rigged model upload</summary><div id="debugModels"></div></details>
+        <details id="contactDetails" class="contact-disclosure">
+        <summary><span>Raw bone intersections</span><span class="contact-summary-hint">Legacy contact diagnostic</span></summary>
         <section class="contact-controls" aria-label="Contact effects">
           <div class="contact-options">
             <label class="check"><input id="contactEffects" type="checkbox">Show contact effects</label>
@@ -139,7 +143,8 @@
           <ul id="contactList" class="contact-list"></ul>
         </section>
       </details>
-      <div class="viewer-footer"><span class="estimate-mark">3D estimates</span><span id="frameQuality">Compare depth and contact with the footage.</span></div>
+      </section>
+      <div class="viewer-footer"><span class="estimate-mark">3D estimates</span><span id="frameQuality">Compare depth and contact with the footage.</span><button id="debugToggle" aria-controls="debugMenu" aria-expanded="false" title="Debug tools (backtick)">Debug <kbd>`</kbd></button></div>
       <p id="orbitHelp" class="scene-help">Source camera follows the footage. Drag to orbit · Scroll or pinch to zoom · Reset returns to the source camera.</p>
     </section>
   </main>

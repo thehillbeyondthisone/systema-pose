@@ -7,3 +7,7 @@ in `../LICENSE`.
 
 Run `work/vendor_custom_models.py` from the repository root to reproduce these
 files. Model files and their embedded textures are loaded locally in the browser.
+
+RectAreaLightUniformsLib and RectAreaLightTexturesLib are also unmodified files
+from the same verified archive. They supply the renderer's soft ceiling-light
+shading tables.

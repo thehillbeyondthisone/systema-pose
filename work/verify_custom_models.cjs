@@ -74,6 +74,7 @@ function makeGLB(source,{names=source.names,staticMesh=false,external=false}={})
   const ready=async(target=page)=>{
    await target.waitForFunction(()=>document.getElementById('studioStatus')?.dataset.state==='ready'&&document.getElementById('sceneVideo').readyState>=2&&document.getElementById('modelUpload')&&!document.getElementById('modelUpload').disabled,null,{timeout:60000});
    await target.locator('#modelDetails').evaluate(details=>details.open=true);
+   if(await target.locator('#debugMenu').isHidden())await target.locator('#debugToggle').click();
   };
   await ready();
   const source=await page.evaluate(async()=>{

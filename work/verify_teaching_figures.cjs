@@ -92,6 +92,7 @@ let server,browser;
   await page.getByRole('button',{name:'Jump to Hand placement illustration',exact:true}).click();
   assert.equal(await page.locator('#orbitStage canvas').getAttribute('data-strike-cue-count'),'1');
   pass('Hiding a participant hides their cue; cancelling a draft removes its unsaved overlay');
+  if(await page.locator('#debugMenu').isHidden())await page.locator('#debugToggle').click();
   await page.locator('#contactDetails').evaluate(details=>details.open=true);await page.locator('#contactEffects').check();
   await page.locator('#sceneScrub').evaluate(input=>{input.value='36';input.dispatchEvent(new Event('input'));});
   assert(Number(await page.locator('#contactStatus').getAttribute('data-count'))>0);

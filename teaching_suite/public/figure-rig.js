@@ -81,7 +81,7 @@ export class FigureRig {
     this.style='mannequin';this.color=new THREE.Color(color);this.highlightJoint=-1;this.intensity=0;
     this.vertexRegions=[];this.vertexKinds=[];
     this.geometry=this.buildGeometry();
-    this.material=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.72,metalness:.05,transparent:true,opacity:1});
+    this.material=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.84,metalness:0,transparent:true,opacity:1});
     this.mesh=new THREE.SkinnedMesh(this.geometry,this.material);this.skinnedMesh=this.mesh;
     this.mesh.name='Skinned teaching mannequin';this.mesh.frustumCulled=false;
     this.mesh.castShadow=true;this.mesh.receiveShadow=true;this.group.add(this.mesh);
@@ -112,7 +112,7 @@ export class FigureRig {
     const ellipsoid=(name,scale,offset=[0,0,0],kind='body',region=name)=>{
       const bone=this.indices.get(name),regionIndex=this.indices.get(region);
       const local=new THREE.Matrix4().compose(new THREE.Vector3(...offset),new THREE.Quaternion(),new THREE.Vector3(...scale));
-      append(new THREE.SphereGeometry(1,14,10),bone,kind,regionIndex,local);
+      append(new THREE.SphereGeometry(1,kind==='head'?24:14,kind==='head'?18:10),bone,kind,regionIndex,local);
     };
     const limb=(start,end,radiusA,radiusB)=>{
       const a=this.indices.get(start),b=this.indices.get(end);if(a==null||b==null)return;
@@ -124,18 +124,24 @@ export class FigureRig {
     // One continuous torso surface, with ring weights on the pelvis and spine.
     // This is the deforming part of the mesh, including shoulder/chest contour.
     const rings=[
-      [.935,.125,.077,'pelvis'],[.99,.143,.088,'pelvis'],[1.10,.135,.087,'spine1'],
-      [1.23,.154,.101,'spine2'],[1.31,.18,.104,'spine3'],[1.40,.19,.096,'spine3'],
-      [1.455,.071,.062,'neck'],
+      [.87,.075,.055,'pelvis'],[.90,.11,.075,'pelvis'],[.935,.125,.077,'pelvis'],[.99,.143,.088,'pelvis'],
+      [1.045,.14,.089,'spine1'],[1.10,.135,.087,'spine1'],[1.165,.145,.095,'spine2'],
+      [1.23,.154,.101,'spine2'],[1.27,.17,.104,'spine2'],[1.31,.18,.104,'spine3'],
+      [1.355,.19,.102,'spine3'],[1.40,.19,.096,'spine3'],[1.43,.12,.078,'neck'],
+      [1.475,.052,.048,'neck'],[1.50,.044,.043,'neck'],
     ];
     const ringStart=positions.length/3,sides=20;
+    const spine=['pelvis','spine1','spine2','spine3','neck'].filter(name=>this.indices.has(name));
     for(let ring=0;ring<rings.length;ring++){
       const [height,width,depth,name]=rings[ring],bone=this.indices.get(name)??0;
+      const next=spine.findIndex(name=>this.rest[this.indices.get(name)].y>=height);
+      const high=this.indices.get(spine[next<0?spine.length-1:next]),low=this.indices.get(spine[Math.max(0,next<0?spine.length-1:next-1)]);
+      const span=this.rest[high].y-this.rest[low].y,blend=span>EPS?clamp((height-this.rest[low].y)/span,0,1):0;
       for(let side=0;side<=sides;side++){
         const angle=side/sides*Math.PI*2;
         positions.push(Math.cos(angle)*width,height,Math.sin(angle)*depth);
         normal.set(Math.cos(angle)/width,0,Math.sin(angle)/depth).normalize();normals.push(normal.x,normal.y,normal.z);
-        skinIndices.push(bone,0,0,0);skinWeights.push(1,0,0,0);
+        skinIndices.push(low,high,0,0);skinWeights.push(1-blend,blend,0,0);
         this.vertexRegions.push(bone);this.vertexKinds.push('torso');
         if(ring<rings.length-1&&side<sides){
           const a=ringStart+ring*(sides+1)+side,b=a+sides+1;
@@ -143,18 +149,21 @@ export class FigureRig {
         }
       }
     }
-    ellipsoid('pelvis',[.135,.105,.087],[0,-.005,0],'torso');
+    const bottomCenter=positions.length/3,pelvis=this.indices.get('pelvis')??0;
+    positions.push(0,rings[0][0],0);normals.push(0,-1,0);skinIndices.push(pelvis,0,0,0);skinWeights.push(1,0,0,0);
+    this.vertexRegions.push(pelvis);this.vertexKinds.push('torso');
+    for(let side=0;side<sides;side++)indices.push(bottomCenter,ringStart+side,ringStart+side+1);
     for(const side of ['left','right']){
       limb(`${side}_hip`,`${side}_knee`,.075,.053);
       limb(`${side}_knee`,`${side}_ankle`,.051,.032);
       limb(`${side}_collar`,`${side}_shoulder`,.046,.06);
       limb(`${side}_shoulder`,`${side}_elbow`,.059,.039);
       limb(`${side}_elbow`,`${side}_wrist`,.043,.025);
-      ellipsoid(`${side}_hip`,[.075,.075,.075],[0,0,0],'joint');
-      ellipsoid(`${side}_shoulder`,[.062,.062,.062],[0,0,0],'joint');
-      ellipsoid(`${side}_elbow`,[.042,.044,.042],[0,0,0],'joint');
-      ellipsoid(`${side}_knee`,[.052,.054,.052],[0,0,0],'joint');
-      ellipsoid(`${side}_ankle`,[.035,.038,.035],[0,0,0],'joint');
+      ellipsoid(`${side}_hip`,[.081,.081,.081],[0,0,0],'joint');
+      ellipsoid(`${side}_shoulder`,[.067,.067,.067],[0,0,0],'joint');
+      ellipsoid(`${side}_elbow`,[.047,.047,.047],[0,0,0],'joint');
+      ellipsoid(`${side}_knee`,[.059,.059,.059],[0,0,0],'joint');
+      ellipsoid(`${side}_ankle`,[.04,.042,.04],[0,0,0],'joint');
       ellipsoid(`${side}_wrist`,[.036,.067,.025],[0,.045,0],'hand');
       // The tracked foot joint is at the toe, so weight the shoe to the ankle
       // and span that entire segment. A sphere at the toe alone leaves a gap.
@@ -165,10 +174,9 @@ export class FigureRig {
       }
     }
     limb('neck','head',.044,.043);
-    ellipsoid('head',[.095,.12,.088],[0,.027,0],'head');
-    ellipsoid('head',[.017,.023,.026],[0,.032,.09],'head');
-    ellipsoid('head',[.009,.009,.006],[-.032,.054,.082],'detail');
-    ellipsoid('head',[.009,.009,.006],[.032,.054,.082],'detail');
+    // A quiet, faceless training form avoids tiny facial features that twist
+    // into an uncanny expression when only the captured head axis is known.
+    ellipsoid('head',[.09,.115,.083],[0,.022,0],'head');
     const geometry=new THREE.BufferGeometry();
     geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
     geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
@@ -182,8 +190,8 @@ export class FigureRig {
   setStyle(style){
     const next=style==='dummy'?'dummy':'mannequin';
     if(next!==this.style){
-      this.style=next;this.material.roughness=next==='dummy'?.93:.72;
-      this.material.metalness=next==='dummy'?0:.05;
+      this.style=next;this.material.roughness=next==='dummy'?.96:.84;
+      this.material.metalness=0;
       this.mesh.name=next==='dummy'?'Skinned training dummy':'Skinned teaching mannequin';
       this.group.userData.figureRig.style=next;this.recolor();
     }

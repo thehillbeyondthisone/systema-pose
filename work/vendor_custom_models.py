@@ -9,7 +9,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DESTINATION = ROOT / 'teaching_suite/public/vendor/three'
-FILES = ['loaders/GLTFLoader.js', 'utils/SkeletonUtils.js', 'utils/BufferGeometryUtils.js']
+FILES = ['loaders/GLTFLoader.js', 'utils/SkeletonUtils.js', 'utils/BufferGeometryUtils.js',
+         'lights/RectAreaLightUniformsLib.js', 'lights/RectAreaLightTexturesLib.js']
 metadata = json.loads((DESTINATION / 'provenance.json').read_text(encoding='utf-8'))
 archive_path = ROOT / 'work/tmp/three-0.180.0.tgz'
 if archive_path.exists():

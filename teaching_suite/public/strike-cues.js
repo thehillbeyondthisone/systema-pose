@@ -184,6 +184,14 @@ export class StrikeCues{
     section.append(this.estimateStatus,this.estimatedCurrent,this.estimatedList);root.append(section);
   }
   personName(id){const person=this.motion.people.find(person=>String(person.id)===String(id));return person?.name||`Participant ${id}`;}
+  refreshParticipantNames(){
+    for(const key of ['Striker','Target'])for(const option of this.fields?.[key]?.options||[])option.textContent=this.personName(option.value);
+    for(const event of this.estimates){
+      const item=this.estimateItems?.get(event.id),meta=item?.querySelector('.strike-estimate-meta');
+      if(meta)meta.textContent=`${this.sourceTime(event.frame)} · ${this.personName(event.strikerId)} → ${this.personName(event.targetId)}`;
+    }
+    this.renderList();
+  }
   getActiveEstimates(){return [...this.activeEstimates];}
   personAt(frame,id){return this.motion.frames[clamp(Math.round(frame),0,this.identity.frameCount-1)]?.people.find(person=>String(person.id)===String(id));}
   pointAt(frame,id,joint){

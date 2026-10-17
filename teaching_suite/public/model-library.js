@@ -1,7 +1,8 @@
 import {loadCustomModel, SOURCE_JOINTS} from './custom-figure.js';
 
 const DATABASE='systema-local-models-v1', STORE='models';
-const MAX_MODELS=8, MAX_BYTES=50*1024*1024;
+export const MAX_MODEL_BYTES=65*1024*1024;
+const MAX_MODELS=8, MAX_BYTES=MAX_MODEL_BYTES;
 const LABELS={pelvis:'Pelvis / hips',left_hip:'Left upper leg',right_hip:'Right upper leg',
   spine1:'Lower spine',left_knee:'Left lower leg',right_knee:'Right lower leg',spine2:'Middle spine',
   left_ankle:'Left ankle',right_ankle:'Right ankle',spine3:'Chest / upper spine',left_foot:'Left toes',
@@ -42,14 +43,14 @@ function webLink(value){
  * requests a figure swap (an omitted personId means all participants).
  */
 export class ModelLibrary{
-  constructor({container,motion,onChange=()=>{},onApply=()=>{},builtinCatalog='characters/catalog.json'}={}){
+  constructor({container,uploadContainer=container,motion,onChange=()=>{},onApply=()=>{},builtinCatalog='characters/catalog.json'}={}){
     if(!container||!motion?.people)throw Error('The model library needs a scene and a container.');
     this.motion=motion;this.onChange=onChange;this.onApply=onApply;
     this.assets=new Map();this.records=new Map();this.failures=new Map();this.cards=new Map();
     this.builtinCatalog=builtinCatalog;this.builtins=new Map();this.builtinFailures=new Map();this.builtinCards=new Map();
     this.db=null;this.storageAvailable=true;this.busy=false;this.destroyed=false;this.restored=false;
     this.prefix=libraryCount++?`model${libraryCount}`:'model';
-    this.mount(container);
+    this.mount(container,uploadContainer);
   }
 
   get(modelId){return this.assets.get(modelId);}
@@ -64,17 +65,15 @@ export class ModelLibrary{
     if(!this.destroyed)this.onChange({type,id:modelId});
   }
 
-  mount(container){
+  mount(container,uploadContainer){
     this.container=container;this.root=element('div','model-library');container.replaceChildren(this.root);
     this.builtinSection=element('section','builtin-models');this.builtinSection.setAttribute('aria-label','Built-in characters');
-    this.builtinSection.append(element('h3','','Try a character'));
-    this.builtinSection.append(element('p','model-help','Free rigged characters, ready for captured motion. Swap everyone or choose a participant while playback continues.'));
     this.builtinGrid=element('div','builtin-model-grid');this.builtinGrid.id=libraryCount===1?'builtinModels':this.prefix+'BuiltinModels';
     this.builtinStatus=element('p','model-status');this.builtinStatus.setAttribute('role','status');this.builtinStatus.setAttribute('aria-live','polite');
     this.builtinStatus.textContent='Loading built-in characters…';
     this.builtinSection.append(this.builtinGrid,this.builtinStatus);this.root.append(this.builtinSection);
-    this.root.append(element('h3','model-upload-heading','Your rigged models'));
-    this.root.append(element('p','model-help','Upload a humanoid GLB, map its bones, then use it for any participant while motion keeps playing.'));
+    this.uploadRoot=element('div','model-library model-debug-library');uploadContainer.append(this.uploadRoot);
+    this.uploadRoot.append(element('p','model-help','Add a self-contained humanoid GLB. Files stay in this browser.'));
     const toolbar=element('div','model-toolbar');
     const uploadLabel=element('label','model-upload','Add rigged models ');
     this.upload=element('input');this.upload.type='file';this.upload.multiple=true;this.upload.id=this.prefix+'Upload';
@@ -83,13 +82,13 @@ export class ModelLibrary{
       const files=[...(this.upload.files||[])];
       try{await this.addFiles(files);}finally{this.upload.value='';}
     });
-    uploadLabel.append(this.upload);toolbar.append(uploadLabel);this.root.append(toolbar);
-    this.root.append(element('p','model-help','Self-contained .glb only, up to 50 MB each and 8 models. Export a skinned humanoid in its rest pose with embedded textures; turn off Draco, Meshopt, and texture compression. Fingers and facial animation are not captured.'));
-    this.root.append(element('p','model-help','Files stay in this browser. Supported rigs are matched automatically; unfamiliar bone names need manual mapping. Your model keeps its own proportions and materials.'));
+    uploadLabel.append(this.upload);toolbar.append(uploadLabel);this.uploadRoot.append(toolbar);
+    this.uploadRoot.append(element('p','model-help','Up to 65 MB each, 8 models. Large textures and dense meshes can slow playback, especially on phones. Browser storage may have its own quota.'));
+    const help=element('details','model-export-help');help.append(element('summary','','Export requirements'),element('p','model-help','Export a skinned humanoid in its rest pose with embedded PNG/JPEG textures. Turn off Draco, Meshopt, and texture compression. Unfamiliar bone names need manual mapping; fingers and facial motion are not captured.'));this.uploadRoot.append(help);
     this.list=element('div','model-list');this.list.id=this.prefix+'List';this.list.setAttribute('aria-label','Your rigged models');
     this.empty=element('p','model-empty','No custom models yet. Add a rigged GLB to get started.');
     this.status=element('p','model-status');this.status.id=this.prefix+'Status';this.status.setAttribute('role','status');
-    this.status.setAttribute('aria-live','polite');this.root.append(this.list,this.empty,this.status);
+    this.status.setAttribute('aria-live','polite');this.uploadRoot.append(this.list,this.empty,this.status);
   }
 
   async openDatabase(){
@@ -192,7 +191,7 @@ export class ModelLibrary{
       this.builtinStatus.dataset.error=String(this.builtinFailures.size>0);
       this.builtinStatus.textContent=this.builtinFailures.size?
         `${count} built-in character${count===1?'':'s'} ready. Some characters are unavailable; reload to retry. You can still upload your own models.`:
-        `${count} built-in character${count===1?'':'s'} ready. Choose one here or in Figure options.`;
+        `${count} characters ready · choose individual styles above.`;
     }catch{
       if(!this.destroyed){
         this.builtinStatus.dataset.error='true';
@@ -212,26 +211,21 @@ export class ModelLibrary{
           preview.width=300;preview.height=360;preview.loading='lazy';preview.decoding='async';card.append(preview);
         }
       }
-      card.append(element('h4','model-name',entry.name),element('p','model-help',entry.description));
+      const copy=element('div','builtin-model-copy');copy.append(element('h4','model-name',entry.name));
       const credit=element('p','builtin-model-credit');
       const source=webLink(entry.source),licenseURL=webLink(entry.licenseUrl);
-      if(source){const link=element('a','',String(entry.creator||'Model source'));link.href=source;link.target='_blank';link.rel='noopener noreferrer';credit.append(link);}
+      if(source){const link=element('a','','Source');link.title=String(entry.creator||'Model source');link.setAttribute('aria-label',`Source: ${entry.creator||entry.name}`);link.href=source;link.target='_blank';link.rel='noopener noreferrer';credit.append(link);}
       else if(entry.creator)credit.append(document.createTextNode(String(entry.creator)));
       if(entry.license){
         if(credit.childNodes.length)credit.append(document.createTextNode(' · '));
-        if(licenseURL){const link=element('a','',String(entry.license));link.href=licenseURL;link.target='_blank';link.rel='noopener noreferrer';credit.append(link);}
+        if(licenseURL){const link=element('a','','CC0');link.title=String(entry.license);link.href=licenseURL;link.target='_blank';link.rel='noopener noreferrer';credit.append(link);}
         else credit.append(document.createTextNode(String(entry.license)));
       }
-      card.append(credit);
-      const state=element('p','model-status');state.dataset.modelReadiness='loading';state.setAttribute('role','status');card.append(state);
+      copy.append(credit);
+      const state=element('p','model-status');state.dataset.modelReadiness='loading';state.setAttribute('role','status');copy.append(state);
       const actions=element('div','model-actions'),controls={card,state,applyButtons:[]};
       const all=button('Apply to all',()=>this.apply(modelId),'apply-all');actions.append(all);controls.applyButtons.push(all);
-      const personLabel=element('label','model-participant');personLabel.append(element('span','','Participant '));
-      const personSelect=element('select');personSelect.dataset.modelParticipant='';
-      for(const person of this.motion.people){const option=element('option','',person.name||`Participant ${person.id}`);option.value=String(person.id);personSelect.append(option);}
-      personLabel.append(personSelect);actions.append(personLabel);
-      const one=button('Apply to participant',()=>this.apply(modelId,personSelect.value),'apply-person');actions.append(one);controls.applyButtons.push(one);
-      card.append(actions);this.builtinCards.set(modelId,controls);this.builtinGrid.append(card);this.refreshBuiltinReadiness(modelId);
+      copy.append(actions);card.append(copy);this.builtinCards.set(modelId,controls);this.builtinGrid.append(card);this.refreshBuiltinReadiness(modelId);
     }
   }
 
@@ -239,7 +233,7 @@ export class ModelLibrary{
     const controls=this.builtinCards.get(modelId);if(!controls)return;
     const ready=this.hasReady(modelId),failure=this.builtinFailures.get(modelId);
     controls.state.dataset.modelReadiness=ready?'ready':failure?'error':'loading';controls.state.dataset.error=String(Boolean(failure));
-    controls.state.textContent=ready?'Ready · Captured body motion drives this character.':failure||'Loading character…';
+    controls.state.textContent=ready?'Ready':failure||'Loading…';
     for(const control of controls.applyButtons)control.disabled=!ready;
   }
 
@@ -292,7 +286,7 @@ export class ModelLibrary{
         try{
           if(this.records.size>=MAX_MODELS)throw Error('The library has 8 models. Remove one before adding another.');
           if(!/\.glb$/i.test(file.name))throw Error('Choose a .glb file. Export your rig as glTF Binary (.glb).');
-          if(file.size>MAX_BYTES)throw Error('This file is larger than 50 MB. Reduce texture sizes or mesh detail and export again.');
+          if(file.size>MAX_BYTES)throw Error('This file is larger than 65 MB. Reduce texture sizes or mesh detail and export again.');
           if(file.size<20)throw Error('This is not a complete GLB file. Export the rig as glTF Binary (.glb).');
           this.setStatus(`Opening ${name}…`);
           const bytes=await file.arrayBuffer();
@@ -403,7 +397,9 @@ export class ModelLibrary{
     try{
       if(await this.onApply(modelId,participantId)===false)return;
       const person=this.motion.people.find(person=>String(person.id)===participantId);
-      this.setStatus(`${this.get(modelId).name} applied to ${participantId===undefined?'all participants':person?.name||`participant ${participantId}`}.${this.storageNote()}`);
+      const message=`${this.get(modelId).name} applied to ${participantId===undefined?'all participants':person?.name||`participant ${participantId}`}.`;
+      if(this.get(modelId).builtin)this.builtinStatus.textContent=message;
+      else this.setStatus(message+this.storageNote());
     }catch(error){this.setStatus(errorMessage(error),true);}
   }
 
@@ -416,9 +412,16 @@ export class ModelLibrary{
     this.setStatus(`${record.name} removed.${saved?'':this.storageNote()}`,!this.storageAvailable);
   }
 
+  refreshParticipantNames(){
+    for(const select of this.uploadRoot.querySelectorAll('[data-model-participant]'))for(const option of select.options){
+      const person=this.motion.people.find(person=>String(person.id)===option.value);
+      if(person)option.textContent=person.name;
+    }
+  }
+
   destroy(){
     this.destroyed=true;this.builtinAbort?.abort();this.db?.close();this.db=null;
     for(const asset of this.assets.values())asset.dispose();
-    this.assets.clear();this.records.clear();this.failures.clear();this.cards.clear();this.builtins.clear();this.builtinFailures.clear();this.builtinCards.clear();this.root.remove();
+    this.assets.clear();this.records.clear();this.failures.clear();this.cards.clear();this.builtins.clear();this.builtinFailures.clear();this.builtinCards.clear();this.root.remove();this.uploadRoot.remove();
   }
 }

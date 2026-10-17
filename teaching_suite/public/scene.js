@@ -2,15 +2,18 @@ import * as THREE from 'three';
 import {OrbitControls} from './vendor/three/OrbitControls.js';
 import {findBoneContacts} from './contact_geometry.mjs';
 import {StudioEnvironment} from './studio-environment.js';
+import {StudioLighting} from './studio-lighting.js';
 import {FigureRig} from './figure-rig.js';
 import {StrikeCues,strikeConfidenceLabel} from './strike-cues.js';
 import {resolveStrikeLanding} from './strike-placement.js';
 import {ModelLibrary} from './model-library.js';
 let studioEnvironment=null;
+let studioLighting=null;
 let modelLibrary=null, modelsRestoring=true;
 let refreshFigureChoices=()=>{};
 let strikeCues=null, teachingPreviewEnd=null, figureStorageKey='';
 let strikeAnchorsReady=false;
+let characterNamesKey='';
 const figureStyles={skeleton:'Line skeleton',bones:'Solid skeleton',mannequin:'Rigged mannequin',dummy:'Training dummy'};
 let figureSettings={defaultStyle:'mannequin',participants:{}};
 const isModelStyle=value=>typeof value==='string'&&/^model:[a-zA-Z0-9_-]{1,100}$/.test(value);
@@ -19,6 +22,18 @@ const selectedStyle=id=>figureSettings.participants[String(id)]||figureSettings.
 function effectiveStyle(id){const value=selectedStyle(id);return isModelStyle(value)&&!modelLibrary?.hasReady(value.slice(6))?'mannequin':value;}
 
 const $=id=>document.getElementById(id), video=$('sceneVideo'), scrub=$('sceneScrub');
+function toggleDebug(open=$('debugMenu').hidden){
+  $('debugMenu').hidden=!open;$('debugToggle').setAttribute('aria-expanded',String(open));
+  if(!open&&contactSettings.enabled){$('contactEffects').checked=false;changeContactSettings();}
+  (open?$('debugClose'):$('debugToggle')).focus({preventScroll:true});
+}
+$('debugToggle').addEventListener('click',()=>toggleDebug());
+$('debugClose').addEventListener('click',()=>toggleDebug(false));
+document.addEventListener('keydown',event=>{
+  if(event.repeat||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey||event.target.closest('input,textarea,select,[contenteditable]'))return;
+  if(event.key==='`'||event.code==='Backquote'){event.preventDefault();toggleDebug();}
+  else if(event.key==='Escape'&&!$('debugMenu').hidden){event.preventDefault();toggleDebug(false);}
+});
 const palette=['#ffc45f','#7bc7ed','#bda4ee','#94d8b8','#f29d91','#dfc688'];
 let motion=null, frame=0, renderer, world, camera, orbit, objects=new Map(), center, extent=4;
 let contactMarkers, markerPool=[], contactSettings={enabled:false,radius:0.02};
@@ -28,6 +43,7 @@ let sourceFollowing=false;
 // a second pass lets it show through the room without turning overlapping body
 // surfaces into a camera-dependent stack of transparent meshes.
 function renderSceneFrame(){
+  studioLighting?.sync(studioEnvironment);
   if(!(studioEnvironment?.ready&&studioEnvironment?.visible&&studioEnvironment?.xray)){
     renderer.render(world,camera);return;
   }
@@ -101,7 +117,7 @@ function resizeSceneCanvas(){
 const contactStorageKey='systema-contact-effects-v1';
 try{
   const saved=JSON.parse(localStorage.getItem(contactStorageKey));
-  if(saved && typeof saved.enabled==='boolean' && [0.02,0.035,0.05].includes(saved.radius))contactSettings=saved;
+  if(saved && [0.02,0.035,0.05].includes(saved.radius))contactSettings.radius=saved.radius;
 }catch{}
 $('contactEffects').checked=contactSettings.enabled;
 $('boneThickness').value=String(contactSettings.radius);
@@ -423,6 +439,13 @@ async function load(){
     const expected=manifest.reconstruction?.expectedParticipants;
     if(Number.isInteger(expected)&&data.people.length!==expected)throw Error(`The scene is being extended to all ${expected} participants.`);
     motion=data;
+    characterNamesKey=`systema-character-names-v1:${data.sourceSha256}`;
+    let names={};try{const saved=JSON.parse(localStorage.getItem(characterNamesKey));if(saved&&typeof saved==='object'&&!Array.isArray(saved))names=saved;}catch{}
+    for(const person of motion.people){
+      person.originalName=person.name;
+      const alias=names[String(person.id)];
+      if(typeof alias==='string'&&alias.trim()&&alias.length<=48&&!/[\u0000-\u001f\u007f]/.test(alias))person.name=alias.trim();
+    }
     figureStorageKey=`systema-figures-v1:${data.sourceSha256}`;
     try{
       const saved=JSON.parse(localStorage.getItem(figureStorageKey));
@@ -431,10 +454,10 @@ async function load(){
       }
     }catch{}
     const stage=$('orbitStage');world=new THREE.Scene();world.background=new THREE.Color('#142234');
-    world.add(new THREE.HemisphereLight('#ffffff','#52637b',2));
-    const figureLight=new THREE.DirectionalLight('#fff3df',2.5);figureLight.position.set(3,7,5);world.add(figureLight);
+    studioLighting=new StudioLighting(world);
     contactMarkers=new THREE.Group();contactMarkers.userData.figureOverlay=true;world.add(contactMarkers);
     renderer=new THREE.WebGLRenderer({antialias:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;
     camera=new THREE.PerspectiveCamera(48,1,0.01,1000);stage.append(renderer.domElement);
     orbit=new OrbitControls(camera,renderer.domElement);orbit.enableDamping=true;
     orbit.addEventListener('start',()=>{sourceFollowing=false;setCameraButtons(null);});
@@ -464,11 +487,21 @@ async function load(){
       const label=document.createElement('label'), checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=true;
       label.className='check';label.style.setProperty('--participant-color',color);
       const key=document.createElement('span');key.className='participant-key';key.setAttribute('aria-hidden','true');
-      label.append(checkbox,key,document.createTextNode(person.name));$('scenePeople').append(label);
+      const visibleName=document.createElement('span');visibleName.textContent=person.name;visibleName.dataset.participantName=String(person.id);
+      label.append(checkbox,key,visibleName);$('scenePeople').append(label);
       checkbox.addEventListener('change',()=>showFrame(frame));objects.set(String(person.id),{group,bones,joints,checkbox,solid,solidBones,solidJoints,color,rig,customRigs:new Map(),customUpdates:new Map()});
-      const styleLabel=document.createElement('label'),select=document.createElement('select');
+      const styleLabel=document.createElement('div'),select=document.createElement('select');
       styleLabel.className='figure-person';styleLabel.style.setProperty('--participant-color',color);
-      const name=document.createElement('span');name.textContent=person.name;
+      const name=document.createElement('input');name.type='text';name.value=person.name;name.maxLength=48;
+      name.className='character-name';name.dataset.characterName=String(person.id);name.setAttribute('aria-label',`Name for character ${person.id}`);name.title='Rename character';
+      name.addEventListener('change',()=>{
+        person.name=name.value.replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,48)||person.originalName;name.value=person.name;
+        visibleName.textContent=person.name;select.setAttribute('aria-label',`Figure style for ${person.name}`);
+        try{localStorage.setItem(characterNamesKey,JSON.stringify(Object.fromEntries(motion.people.map(person=>[String(person.id),person.name]))));$('characterNameStatus').textContent='Character names saved in this browser.';}
+        catch{$('characterNameStatus').textContent='Names changed for this tab. Browser storage is unavailable.';}
+        modelLibrary?.refreshParticipantNames();strikeCues?.refreshParticipantNames();showContacts();
+      });
+      name.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();name.blur();}else if(event.key==='Escape'){name.value=person.name;name.blur();}});
       select.id=`figure-style-${person.id}`;select.setAttribute('aria-label',`Figure style for ${person.name}`);
       for(const [value,title] of Object.entries(figureStyles))select.add(new Option(title,value));
       select.value=effectiveStyle(person.id);
@@ -504,7 +537,7 @@ async function load(){
       updateFigureStyles();
     }
     refreshFigureChoices=refreshModelChoices;
-    modelLibrary=new ModelLibrary({container:$('modelLibrary'),motion,
+    modelLibrary=new ModelLibrary({container:$('modelLibrary'),uploadContainer:$('debugModels'),motion,
       onChange:event=>refreshModelChoices(event),
       onApply:(id,participantId)=>{
         if(!modelLibrary.hasReady(id))return;

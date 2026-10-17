@@ -37,6 +37,8 @@ export class StudioEnvironment {
       const probe=await fetch(assetUrl,{method:'HEAD'});
       if(!probe.ok)throw Error('Prepare the studio scan with work/prepare_studio.py, then choose Retry.');
       this.spark??=new SparkRenderer({renderer:this.renderer,minSortIntervalMs:24});
+      // The scan already contains its photographed exposure and lighting.
+      this.spark.material.toneMapped=false;
       if(!this.spark.parent)this.world.add(this.spark);
       this.mesh=new SplatMesh({url:assetUrl,minRaycastOpacity:.04,onProgress:event=>{
         if(event.total)this.status.textContent=`Loading studio scan · ${Math.round(event.loaded/event.total*100)}%`;
