@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-let state=null,selected=null,editorId=null,lastState='',pending=false,activePassage=0,lastJobNotice='',previewShown='';
+let state=null,selected=null,editorId=null,lastState='',pending=false,activePassage=0,lastJobNotice='',previewShown='',reviewClipId=null;
 const cameraChoices=new Map(),reviewChecks=new Map();
 const element=(tag,text,className='')=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;};
 function message(text,error=false){$('adminStatus').textContent=text;$('adminStatus').dataset.error=String(error);}
@@ -28,6 +28,7 @@ function controls(){
   $('checkRequirements').disabled=pending||working;
   $('enableGpu').disabled=pending||working;
   $('pauseGpu').disabled=pending;
+  $('importRoom').disabled=pending||working;
   for(const button of document.querySelectorAll('[data-reconstruct]'))button.disabled=pending||working||!state?.threeD.ready;
   for(const button of document.querySelectorAll('[data-approve3d]'))button.disabled=pending||working||!reviewChecks.get(button.dataset.approve3d);
 }
@@ -62,6 +63,7 @@ function render(){
   $('adminLessons').replaceChildren();
   for(const lesson of state.lessons){const button=element('button',undefined,lesson.id===selected?'active':'');button.append(element('strong',lesson.title),element('small',`${lesson.status}${lesson.status==='processing'?' · '+lesson.progress+'%':''}`));button.addEventListener('click',()=>{saveEditor();selected=lesson.id;loadEditor();render();});$('adminLessons').append(button);}
   if(!state.lessons.length)$('adminLessons').append(element('p','No source videos imported yet.','helper'));
+  $('roomLibrary').textContent=(state.rooms||[]).map(room=>`${room.title} · ${(room.bytes/1024/1024).toFixed(1)} MB`).join(' · ')||'No room scans imported yet.';
   loadEditor();$('stagedCount').textContent=state.staged.length+' staged';$('publicCount').textContent=state.clips.length+' clips in catalog';$('stagedClips').replaceChildren();
   const preview=state.preview?.id||'';if(preview!==previewShown){$('reviewedPreview').checked=false;previewShown=preview;}
   for(const clip of state.clips.filter(clip=>state.staged.includes(clip.id))){
@@ -75,8 +77,24 @@ function render(){
     start.addEventListener('click',()=>action(async()=>{await api(`clips/${clip.id}/reconstruct`,{camera:camera.value});reviewChecks.delete(clip.id);$('reviewedPreview').checked=false;message('3D reconstruction started. Progress appears here; you can cancel and retry.');}));actions.append(start);
     if(running){const cancel=element('button','Cancel');cancel.addEventListener('click',()=>action(async()=>message((await api(`clips/${clip.id}/cancel`,{})).message)));actions.append(cancel);}
     card.append(actions);
-    const reviewUrl=(!reconstruction||reconstruction.status==='ready')?(reconstruction?.reviewUrl||(clip.scene&&state.preview?state.preview.url+'scene.html?clip='+clip.id:null)):null;
-    if(reviewUrl){const review=element('button','Review 3D scene');review.dataset.review3d=clip.id;review.addEventListener('click',()=>{$('sceneReview').hidden=false;$('sceneReviewTitle').textContent=clip.title;$('sceneReviewFrame').src=reviewUrl;$('sceneReview').scrollIntoView({behavior:'smooth',block:'start'});});card.append(review);}
+    const reviewUrl=(!reconstruction||reconstruction.status==='ready')?((clip.scene&&state.preview?state.preview.url+'scene.html?clip='+clip.id:null)||(!clip.environment&&reconstruction?.reviewUrl)):null;
+    if(reviewUrl){const review=element('button','Review 3D scene');review.dataset.review3d=clip.id;review.addEventListener('click',()=>{reviewClipId=clip.id;$('sceneReview').hidden=false;$('sceneReviewTitle').textContent=clip.title;$('sceneReviewFrame').src=reviewUrl;$('sceneReview').scrollIntoView({behavior:'smooth',block:'start'});});card.append(review);}
+    if(clip.scene&&(state.rooms||[]).length){
+      const label=element('label','Room scan'),select=element('select');select.dataset.roomClip=clip.id;
+      for(const room of state.rooms){const option=element('option',room.title);option.value=room.id;select.append(option);}label.append(select);card.append(label);
+      const attach=element('button',clip.environment?'Replace room scan':'Attach room scan');attach.dataset.attachRoom=clip.id;attach.disabled=working;
+      attach.addEventListener('click',()=>action(async()=>message((await api(`clips/${clip.id}/room`,{roomId:select.value})).message)));card.append(attach);
+      if(clip.environment){const save=element('button','Save room placement from review');save.dataset.saveRoom=clip.id;save.disabled=working;
+        save.addEventListener('click',()=>action(async()=>{
+          if(reviewClipId!==clip.id||$('sceneReview').hidden)throw Error('Build a preview and open this passage’s 3D review first.');
+          const frame=$('sceneReviewFrame').contentWindow,requestId=crypto.randomUUID();
+          const record=await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>{window.removeEventListener('message',receive);reject(Error('The room has not loaded in this review. Reopen the latest preview.'));},10000);
+            function receive(event){if(event.source!==frame||event.origin!==location.origin||event.data?.type!=='systema-room-placement'||event.data.requestId!==requestId)return;clearTimeout(timeout);window.removeEventListener('message',receive);resolve(event.data.record);}
+            window.addEventListener('message',receive);frame.postMessage({type:'systema-room-placement-request',requestId},location.origin);
+          });message((await api(`clips/${clip.id}/room-placement`,record)).message);
+        }));card.append(save,element('p','Adjust the room under Studio alignment in the 3D review, then save its placement here. Room placement remains an estimate until calibrated.','helper'));
+      }
+    }
     if(reconstruction?.status==='ready'){
       const label=element('label',undefined,'admin-check'),checkbox=element('input');checkbox.type='checkbox';checkbox.dataset.reviewed3d=clip.id;
       checkbox.checked=reconstruction.reviewed||reviewChecks.get(clip.id)||false;checkbox.disabled=reconstruction.reviewed;
@@ -130,6 +148,7 @@ $('publishVideos').addEventListener('click',()=>action(async()=>{await api('publ
 $('refreshAdmin').addEventListener('click',()=>refresh().catch(error=>message(error.message,true)));
 $('checkRequirements').addEventListener('click',()=>action(async()=>{await api('requirements',{});message('Checking the installed 3D workstation…');}));
 $('enableGpu').addEventListener('click',()=>action(async()=>{await api('requirements',{gpu:true});message('GPU enabled. Checking CUDA and body models…');}));
+$('roomForm').addEventListener('submit',event=>{event.preventDefault();action(async()=>{await api('rooms/import',{path:$('roomPath').value,title:$('roomTitle').value,upAxis:$('roomUpAxis').value});message('Importing the room scan on the CPU…');});});
 $('pauseGpu').addEventListener('click',()=>action(async()=>message((await api('gpu/pause',{})).message)));
 $('closeSceneReview').addEventListener('click',()=>{$('sceneReview').hidden=true;$('sceneReviewFrame').removeAttribute('src');});
 async function poll(){try{await refresh();if($('adminStatus').textContent.startsWith('Connecting'))message('Local workstation connected. Import a video to begin.');}catch(error){message(error.message,true);}setTimeout(poll,1800);}poll();

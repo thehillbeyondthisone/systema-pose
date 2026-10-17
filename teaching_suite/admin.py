@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 
 import onboarding
 import reconstruction
+import room_scans
 
 WORKSPACE = Path(__file__).resolve().parent.parent
 PROJECT = Path(os.environ.get('SYSTEMA_ADMIN_PROJECT_ROOT', str(WORKSPACE))).resolve()
@@ -88,6 +89,7 @@ def state():
                 'processingAvailable': runtime.get('videoReady',
                     (WORKSPACE / 'work/models/manifest.json').is_file() and (WORKSPACE / 'work/runtime/cv2').is_dir()),
                 'threeD': runtime,
+                'rooms': room_scans.library(sys.modules[__name__]),
                 'reconstructions': reconstruction.records(sys.modules[__name__])}
 
 
@@ -274,6 +276,12 @@ def fingerprint():
                 if not path.is_relative_to(PROJECT) or not path.is_file():
                     raise ValueError('A publishing asset is missing or outside the project.')
                 paths.add(path)
+                if key == 'environment':
+                    config = json.loads(path.read_text(encoding='utf-8'))
+                    asset = (path.parent / config['asset']).resolve()
+                    if not asset.is_relative_to(PROJECT) or not asset.is_file():
+                        raise ValueError('A room scan is missing or outside the project.')
+                    paths.add(asset)
     sha = hashlib.sha256(git('rev-parse', 'HEAD').stdout.encode())
     for path in sorted(paths):
         sha.update(str(path.relative_to(PROJECT)).encode());sha.update(digest(path).encode())
@@ -319,13 +327,19 @@ def publish(raw):
             if entry['id'] not in record['staged']:
                 continue
             folder = (PROJECT / 'site/clips' / entry['id']).resolve()
-            for key in ('video', 'motion', 'poster', 'scene'):
+            for key in ('video', 'motion', 'poster', 'scene', 'environment'):
                 if not entry.get(key):
                     continue
                 path = (PROJECT / entry[key]).resolve()
                 if not path.is_relative_to(folder) or not path.is_file() or path.stat().st_size > MAX_ASSET:
                     raise ValueError('A staged asset is invalid or exceeds the 95 MB publishing limit.')
                 allowed.add(path.relative_to(PROJECT).as_posix())
+                if key == 'environment':
+                    config = json.loads(path.read_text(encoding='utf-8'))
+                    asset = (path.parent / config['asset']).resolve()
+                    if not asset.is_relative_to(folder) or not asset.is_file() or asset.suffix != '.splat' or asset.stat().st_size > MAX_ASSET:
+                        raise ValueError('A room scan must be a compact .splat inside this passage, under 95 MB.')
+                    allowed.add(asset.relative_to(PROJECT).as_posix())
         dirty = git('status', '--porcelain', '--untracked-files=all').stdout.splitlines()
         if any(line[3:].replace('\\', '/') not in allowed for line in dirty):
             raise ValueError('Unrelated workspace changes are present. Commit or set them aside before publishing videos.')

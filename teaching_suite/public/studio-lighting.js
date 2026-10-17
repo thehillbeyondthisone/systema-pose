@@ -22,7 +22,7 @@ export class StudioLighting{
     for(const light of this.fixtures)light.removeFromParent();this.fixtures=[];
     this.fill.intensity=.95;this.fallback.intensity=0;
     const rotation=studio.group.getWorldQuaternion(new THREE.Quaternion());
-    const down=new THREE.Vector3(0,1,0).applyQuaternion(rotation),up=new THREE.Vector3(0,0,1).applyQuaternion(rotation);
+    const down=new THREE.Vector3().fromArray(config.down||[0,1,0]).applyQuaternion(rotation),up=new THREE.Vector3().fromArray(config.up||[0,0,1]).applyQuaternion(rotation);
     const scale=studio.group.getWorldScale(new THREE.Vector3()).x;
     for(const [index,fixture] of config.fixtures.entries()){
       const light=new THREE.RectAreaLight(fixture.color||'#fffdfb',fixture.intensity??18,fixture.width*scale,fixture.height*scale);

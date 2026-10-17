@@ -51,11 +51,14 @@ loopback connections; they are excluded from the GitHub Pages build.
    the dashboard. Check source, side and overhead views, identity continuity,
    hidden limbs and foot placement, then save the 3D review. Publication checks
    the exact reviewed scene hash. Depth, scale and contact remain estimates.
-   A different camera or room needs a separate calibration before adding a splat.
+   Import a Gaussian PLY, .splat, or SHARE export folder under **Room scans**.
+   Attach it to the passage, build a preview, adjust **Studio alignment**, then
+   choose **Save room placement from review**. Build a fresh final preview.
+   New room placements are labelled estimates; exact matching needs calibration.
    Existing matching scene JSON can still be imported under **Advanced**.
 7. **Build and review the public preview.** This uses the actual Pages builder.
 8. **Publish reviewed clips.** The dashboard commits only the staged clip assets
-   and catalog, then pushes to `main` using the workstation's GitHub connection.
+   (including its compact room scan) and catalog, then pushes to `main` using the workstation's GitHub connection.
    GitHub Actions deploys the update. Unrelated workspace changes and a stale
    preview block publishing. The activity log distinguishes a successful push
    from the subsequent Pages deployment.

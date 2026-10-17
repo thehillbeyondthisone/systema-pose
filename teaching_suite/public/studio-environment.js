@@ -17,7 +17,7 @@ export class StudioEnvironment {
   async load(){
     $('studioRetry').hidden=true;
     try{
-      const response=await fetch(this.configUrl);
+      const response=await fetch(this.configUrl,{cache:'no-store'});
       if(!response.ok)throw Error('Studio configuration is missing.');
       const config=await response.json();
       if(config.schemaVersion!==1||!config.asset||!validAlignment(config.alignment))throw Error('Invalid studio configuration.');
@@ -32,7 +32,9 @@ export class StudioEnvironment {
       }catch{}
       this.fill();this.updateCalibrationLabel();
       const {SparkRenderer,SplatMesh}=await import('./vendor/spark/spark.module.js');
-      const assetUrl=new URL(config.asset,new URL(this.configUrl,location.href)).href;
+      const asset=new URL(config.asset,new URL(this.configUrl,location.href));
+      if(config.sourceSha256)asset.searchParams.set('v',config.sourceSha256);
+      const assetUrl=asset.href;
       // Distinguish a missing local asset before starting the decoder worker.
       const probe=await fetch(assetUrl,{method:'HEAD'});
       if(!probe.ok)throw Error('Prepare the studio scan with work/prepare_studio.py, then choose Retry.');
@@ -57,6 +59,10 @@ export class StudioEnvironment {
     }
   }
   bind(){
+    window.addEventListener('message',event=>{
+      if(window.parent===window||event.source!==window.parent||event.origin!==location.origin||event.data?.type!=='systema-room-placement-request'||!this.ready)return;
+      event.source.postMessage({type:'systema-room-placement',requestId:event.data.requestId,record:this.record()},event.origin);
+    });
     for(const field of fields)$('studio-'+field).addEventListener('change',()=>{
       const next=Object.fromEntries(fields.map(key=>[key,Number($('studio-'+key).value)]));
       if(!validAlignment(next)){this.status.textContent='Use finite values within the alignment limits.';this.fill();return;}

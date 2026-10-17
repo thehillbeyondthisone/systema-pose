@@ -16,6 +16,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--resume', help='Resume browser review of an already reconstructed isolated test run')
 parser.add_argument('--retry', action='store_true', help='Repeat inference on the same isolated staged passage')
 parser.add_argument('--allow-gpu', action='store_true', help='Required: authorizes real CUDA validation and reconstruction')
+parser.add_argument('--room-path', help='Optional real local Gaussian export to include in the publication test')
 args = parser.parse_args()
 if not args.allow_gpu:raise SystemExit('GPU testing is deferred. Pass --allow-gpu only when the GPU is available.')
 if args.resume and (len(args.resume) != 32 or any(c not in '0123456789abcdef' for c in args.resume)):
@@ -44,6 +45,7 @@ base = f'http://127.0.0.1:{port}'
 environment = {**os.environ, 'SYSTEMA_DATA_DIR': str(OUT / 'private-data'), 'SYSTEMA_ADMIN_PROJECT_ROOT': str(PROJECT),
                'SYSTEMA_ADMIN_TEST_URL': base, 'SYSTEMA_ADMIN_TEST_OUTPUT': str(OUT), 'SYSTEMA_ADMIN_TEST_PROJECT': str(PROJECT)}
 environment['SYSTEMA_ADMIN_ALLOW_GPU'] = '1'
+if args.room_path:environment['SYSTEMA_ADMIN_TEST_ROOM'] = args.room_path
 if args.resume:environment['SYSTEMA_ADMIN_RESUME'] = '1'
 if args.retry:environment['SYSTEMA_ADMIN_RETRY'] = '1'
 log = (OUT / 'server.log').open('w')

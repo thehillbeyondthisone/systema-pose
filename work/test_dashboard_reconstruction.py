@@ -39,6 +39,16 @@ class ReconstructionGuards(unittest.TestCase):
         with self.assertRaises(ValueError):r.linux_path(Path('//server/share/video.mp4'))
         with self.assertRaises(ValueError):r.record_path(admin, '../elsewhere')
 
+    def test_locked_progress_file_keeps_dashboard_available(self):
+        self.value.update(status='running', message='Reconstructing body frames')
+        admin.onboarding.save(self.path, self.value)
+        original = Path.read_text
+        def read(path, *args, **kwargs):
+            if path.name == 'progress.json':raise PermissionError('WSL is replacing progress')
+            return original(path, *args, **kwargs)
+        with patch.object(Path, 'read_text', read):
+            self.assertEqual(r.records(admin)['review-test']['message'], 'Reconstructing body frames')
+
     def test_missing_wsl_and_timeout_report_failure(self):
         video = subprocess.CompletedProcess([], 0, stdout='{"ready":true,"detail":"Video runtime present"}')
         with patch.object(r.shutil, 'which', return_value=None), patch.object(r.subprocess, 'run', return_value=video):

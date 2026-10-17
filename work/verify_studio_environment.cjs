@@ -8,6 +8,7 @@ const OUT=path.join(ROOT,'outputs/studio-validation');
 fs.mkdirSync(OUT,{recursive:true});
 const report={checks:[],errors:[]};
 const studioConfig=JSON.parse(fs.readFileSync(path.join(ROOT,'teaching_suite/public/studio/environment.json')));
+const sourceHash=JSON.parse(fs.readFileSync(path.join(ROOT,'outputs/3d-pilot/scene.json'))).sourceSha256;
 const initial=studioConfig.alignment;
 const shiftedZ=Math.round((initial.z+.25)*10000)/10000;
 const resetZ=String(Math.round(initial.z*10000)/10000);
@@ -16,14 +17,15 @@ function pass(value){report.checks.push(value);console.log('PASS '+value);}
  const browser=await chromium.launch({channel:'msedge',headless:true});
  try{
   const context=await browser.newContext({viewport:{width:1440,height:1100},acceptDownloads:true});
-  await context.addInitScript(config=>{
-   localStorage.setItem(`systema-studio-v1:${config.calibration.sourceSha256}:${config.id}`,JSON.stringify({x:999,y:999,z:999,pitch:180,yaw:0,roll:0,scale:1}));
-  },studioConfig);
+  await context.addInitScript(({config,sourceHash})=>{
+   localStorage.setItem(`systema-studio-v1:${sourceHash}:${config.id}`,JSON.stringify({x:999,y:999,z:999,pitch:180,yaw:0,roll:0,scale:1}));
+  },{config:studioConfig,sourceHash});
   const page=await context.newPage();page.on('pageerror',e=>report.errors.push(e.message));
   const remote=[];page.on('request',r=>{if(/^https?:/.test(r.url())&&!r.url().startsWith(BASE))remote.push(r.url());});
   async function ready(){await page.waitForFunction(()=>document.getElementById('studioStatus').dataset.state==='ready',{timeout:60000});}
   await page.goto(BASE+'/scene.html');await ready();
   assert.equal(await page.locator('#scenePeople input').count(),4);
+  assert.equal(await page.locator('#studioBadge').innerText(),studioConfig.calibration?'Matched to footage':'Alignment estimate');
   assert.equal(remote.length,0);pass('Local Gaussian scan loads alongside four participants without CDN requests');
   assert.equal(await page.locator('#studio-x').inputValue(),String(Math.round(initial.x*10000)/10000));
   assert.equal(await page.locator('[data-camera="source"]').getAttribute('aria-pressed'),'true');
@@ -46,6 +48,10 @@ function pass(value){report.checks.push(value);console.log('PASS '+value);}
 
   await page.locator('#sceneScrub').evaluate(el=>{el.value='150';el.dispatchEvent(new Event('input',{bubbles:true}));});
   await page.waitForFunction(()=>Math.abs(document.getElementById('sceneVideo').currentTime-5)<.01&&!document.getElementById('sceneVideo').seeking);
+  await page.locator('#sceneSpeed').selectOption('0.25');await page.locator('#scenePlay').click();await page.waitForTimeout(1500);await page.locator('#scenePlay').click();
+  const slowFrame=Number(await page.locator('#sceneScrub').inputValue());assert(slowFrame>150&&slowFrame<180,`Slow playback reached ${slowFrame}`);
+  await page.locator('#sceneSpeed').selectOption('1');await page.locator('#sceneScrub').evaluate(el=>{el.value='150';el.dispatchEvent(new Event('input',{bubbles:true}));});
+  await page.waitForFunction(()=>Math.abs(document.getElementById('sceneVideo').currentTime-5)<.01&&!document.getElementById('sceneVideo').seeking);pass('Quarter-speed replay advances synchronized footage and source-camera motion with the new Gaussian room');
   await page.locator('.studio-alignment summary').click();
   await page.locator('#studio-z').fill(String(shiftedZ));await page.locator('#studio-z').dispatchEvent('change');
   assert.equal(await page.locator('#sceneScrub').inputValue(),'150');pass('Room registration changes preserve the synchronized source frame');
@@ -63,10 +69,11 @@ function pass(value){report.checks.push(value);console.log('PASS '+value);}
   await page.locator('#studioReset').click();
   await page.locator('#studioVisible').uncheck();await page.locator('#studioVisible').check();
   await page.locator('#studioXray').uncheck();await page.locator('#studioXray').check();
-  await page.locator('#contactDetails summary').click();await page.locator('#contactEffects').check();
+  await page.locator('#debugToggle').click();await page.locator('#contactDetails summary').click();await page.locator('#contactEffects').check();
   await page.locator('#sceneScrub').evaluate(el=>{el.value='36';el.dispatchEvent(new Event('input',{bubbles:true}));});
   assert(Number(await page.locator('#contactStatus').getAttribute('data-count'))>0);
   await page.locator('#contactEffects').uncheck();pass('Studio visibility, figure occlusion and estimated contacts remain interactive');
+  await page.locator('#debugClose').click();
   // A screen-space floor triangle exercises the renderer's real Gaussian raycast.
   await page.locator('#studioFloor').click();await page.locator('#orbitStage canvas').scrollIntoViewIfNeeded();
   const box=await page.locator('#orbitStage canvas').boundingBox();
@@ -85,10 +92,10 @@ function pass(value){report.checks.push(value);console.log('PASS '+value);}
   }
   await page.screenshot({path:path.join(OUT,'studio-tablet.png'),fullPage:true});pass('Phone and tablet layouts have no horizontal overflow');
   const failure=await context.newPage();failure.on('pageerror',e=>report.errors.push(e.message));
-  await failure.route('**/studio.splat',route=>route.fulfill({status:404,body:'missing'}));
+  await failure.route('**/studio.splat*',route=>route.fulfill({status:404,body:'missing'}));
   await failure.goto(BASE+'/scene.html');await failure.waitForFunction(()=>document.getElementById('studioStatus').dataset.state==='error');
   assert.equal(await failure.locator('#scenePeople input').count(),4);assert.equal(await failure.locator('#scenePlay').isEnabled(),true);
-  await failure.unroute('**/studio.splat');await failure.locator('#studioRetry').click();
+  await failure.unroute('**/studio.splat*');await failure.locator('#studioRetry').click();
   await failure.waitForFunction(()=>document.getElementById('studioStatus').dataset.state==='ready',{timeout:60000});
   pass('Missing scan leaves motion usable and Retry recovers without reloading');
   assert.deepEqual(report.errors,[]);pass('No browser JavaScript errors');

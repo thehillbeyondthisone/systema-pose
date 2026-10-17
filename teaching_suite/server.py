@@ -250,6 +250,11 @@ class Handler(SimpleHTTPRequestHandler):
                 if path=='/api/admin/publish':return self.send_json(admin.publish(raw),202)
                 if path=='/api/admin/requirements':return self.send_json(admin.reconstruction.requirements(admin,use_gpu=raw.get('gpu') is True),202)
                 if path=='/api/admin/gpu/pause':return self.send_json(admin.reconstruction.pause_gpu(admin))
+                if path=='/api/admin/rooms/import':return self.send_json(admin.room_scans.import_scan(admin,raw),202)
+                match=re.fullmatch(r'/api/admin/clips/([a-z0-9]+(?:-[a-z0-9]+)*)/(room|room-placement)',path)
+                if match:
+                    if match[2]=='room':return self.send_json(admin.room_scans.attach(admin,match[1],raw))
+                    return self.send_json(admin.room_scans.save_placement(admin,match[1],raw))
                 match=re.fullmatch(r'/api/admin/clips/([a-z0-9]+(?:-[a-z0-9]+)*)/(reconstruct|cancel|review)',path)
                 if match:
                     if match[2]=='reconstruct':return self.send_json(admin.reconstruction.reconstruct(admin,match[1],raw),202)

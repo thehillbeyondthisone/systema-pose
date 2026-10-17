@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "source": "Martial Arts Studio - Best Reviewed.ply",
-  "sourceSha256": "7c86b2a438ba3a360a5492be4efedff593e60c2199b5286d5689941ac797cd45",
-  "inputSplats": 674953,
-  "splats": 674666,
-  "bytes": 21589312,
+  "source": "2026-10-17_07-57-33_3DGS_epoch_30.ply",
+  "sourceSha256": "9ceb7bcedfae221798baf73e1ec151830ab710e77b297481970e1e12781072a5",
+  "inputSplats": 1117363,
+  "splats": 1117363,
+  "bytes": 35755616,
   "format": "splat",
   "color": "SH degree 0; higher-order view-dependent color omitted",
   "preserves": [

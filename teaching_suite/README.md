@@ -80,7 +80,17 @@ restoration, saved-scene review controls, preview and publication against an
 isolated local Git remote. Its browser disables GPU acceleration and WebGL.
 The full reconstruction check is separate:
 `work/verify_dashboard_3d.py --allow-gpu`. Run that only when the GPU is available;
-it has been deferred while the GPU is reserved for other work.
+the real 60-frame, four-person reconstruction and isolated publication passed on
+17 October 2026. Add `--room-path "C:\path\to\scan-export"` to include a real
+Gaussian room import, placement review, scan-change detection and publication.
+
+The dashboard’s **Room scans** section accepts an absolute path to a Gaussian PLY,
+compact .splat, or SHARE export folder. Folder imports choose the latest epoch.
+Original scans remain untouched; compact copies stay private until attached to a
+staged 3D passage. Build a preview, adjust **Studio alignment**, choose **Save room
+placement from review**, then build and review the final preview. New room
+placement is an estimate and never inherits the pilot’s calibration. Publishing
+includes only that passage’s compact room asset and configuration.
 
 `work/verify_view_selection.cjs` checks the view presets, independent panels, saved preferences, unchanged playback and participants, draft visibility, keyboard focus, storage failures, and 3D navigation/playback. It checks portrait and landscape phones, iPad sizes, desktop, and a 320px phone for overflow and touch targets. Run it against an isolated lesson server on port 8772, or set `SYSTEMA_TEST_URL`. Screenshots and `validation.json` are in `outputs/view-selection/`. These are browser-emulated layout checks; they do not establish live iPad Safari compatibility.
 

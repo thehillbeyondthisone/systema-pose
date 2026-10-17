@@ -1,64 +1,65 @@
 {
   "schemaVersion": 1,
-  "id": "martial-studio-c2e7330f",
-  "title": "Martial Arts Studio - Best Reviewed",
+  "id": "studio-20261017-9ceb7bce",
+  "title": "Systema studio \u00b7 17 October 2026",
   "asset": "studio.splat",
-  "registration": "calibrated to source footage",
+  "sourceSha256": "9ceb7bcedfae221798baf73e1ec151830ab710e77b297481970e1e12781072a5",
+  "registration": "Estimated placement from initial photo landmarks and the leveled scan floor, visually reviewed across the clip. Full room calibration remains unverified.",
   "alignment": {
-    "x": -1.390918802300626,
-    "y": 1.3659544014581846,
-    "z": 0.7510952982350123,
-    "yaw": 162.99173093490666,
-    "pitch": 0.9562742873788692,
-    "roll": 179.58599162562038,
-    "scale": 0.7772144527710009
-  },
-  "calibration": {
-    "id": "studio-landmarks-v2",
-    "method": "Gaussian scan landmarks matched to stationary footage features; robust PnP source-camera poses; floor leveling; per-frame camera stabilization",
-    "scaleBasis": "Existing reconstruction model meters, anchored to the authoritative frame-0 source-camera height. Physical scale is unmeasured.",
-    "residualPixels": {
-      "medianAnchorRms": 2.9771227883462013,
-      "maxAnchorRms": 3.595866391545733
-    },
-    "sourceSha256": "c827366d700bf720bc5e83a4292c5606cc9806fa5eee3955d2a72b92aa1a69f9"
+    "x": -2.330483233580623,
+    "y": 1.6383166824931161,
+    "z": 0.12644205549760826,
+    "yaw": 80.12942303391284,
+    "pitch": -89.17493152009557,
+    "roll": -15.739813285594655,
+    "scale": 1.046702867673249
   },
   "lighting": {
-    "method": "Three compact ceiling-emitter clusters sampled from the registered Gaussian scan; power and bounce visually matched, not recovered photometrically.",
+    "method": "Three compact ceiling fixtures located in the new scan. Exposure, power and bounce remain visual estimates.",
     "coordinateSpace": "scan-local",
+    "down": [
+      0,
+      0,
+      -1
+    ],
+    "up": [
+      0,
+      1,
+      0
+    ],
     "fixtures": [
       {
         "position": [
-          2.8625,
-          -0.8702,
-          -0.2114
+          1.515310645,
+          0.112268582,
+          0.501346767
         ],
-        "width": 0.3,
-        "height": 0.3,
-        "color": "#fffdfb",
-        "intensity": 18
+        "width": 0.23,
+        "height": 0.23,
+        "intensity": 18,
+        "color": "#fffdfb"
       },
       {
         "position": [
-          1.4976,
-          -0.9566,
-          4.2072
+          3.206084967,
+          -1.634266138,
+          0.534479856
         ],
-        "width": 0.3,
-        "height": 0.3,
-        "color": "#fffdfb",
-        "intensity": 18
+        "width": 0.23,
+        "height": 0.23,
+        "intensity": 18,
+        "color": "#fffdfb"
       },
       {
         "position": [
-          -1.1268,
-          -0.9426,
-          2.3893
+          -2.464067936,
+          -1.998982072,
+          0.521145761
         ],
-        "width": 0.3,
-        "height": 0.3,
-        "color": "#fffdfb",
-        "intensity": 18
+        "width": 0.23,
+        "height": 0.23,
+        "intensity": 18,
+        "color": "#fffdfb"
       }
     ]
   }

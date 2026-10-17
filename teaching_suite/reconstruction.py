@@ -122,7 +122,7 @@ def records(admin):
         if value.get('status') == 'running':
             update = path.parent / value['runId'] / 'progress.json'
             try:value['message'] = json.loads(update.read_text(encoding='utf-8'))['message']
-            except (FileNotFoundError, ValueError):pass
+            except (OSError, ValueError):pass
         result[value['clipId']] = value
     return result
 
@@ -208,7 +208,12 @@ def reconstruct(admin, clip_id, raw):
                     if any(not c['ok'] for c in storage(admin)):
                         raise ValueError('Stopped to preserve the 8 GiB free-space reserve.')
                     if time.monotonic() - started > 4*3600:raise ValueError('Reconstruction exceeded four hours. Retry a shorter passage.')
-                    try:progress['message'] = json.loads((output / 'progress.json').read_text())['message']
+                    try:
+                        message = json.loads((output / 'progress.json').read_text())['message']
+                        progress['message'] = message
+                        if value['message'] != message:
+                            value['message'] = message
+                            admin.onboarding.save(path, value)
                     except (OSError, ValueError):pass
                 reader.join(timeout=5)
                 if process.returncode:

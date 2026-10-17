@@ -6,6 +6,7 @@ A movement study viewer for watching Systema lessons, exploring motion in 2D and
 **[Open the live movement library](https://thehillbeyondthisone.github.io/systema-pose/)**
 
 [Explore the scanned studio in 3D](https://thehillbeyondthisone.github.io/systema-pose/scene.html?clip=multiple-attackers) with animated participants and a camera matched to the footage.
+The room uses the 17 October scan; room placement and character scale are estimates.
 
 ## Explore a lesson
 
@@ -36,7 +37,8 @@ teacher to prepare. Notes and requests are saved on your computer.
 
 Double-click `quickstart-admin.bat` for the local video dashboard. Import a video,
 choose passages, prepare tracking, then reconstruct and review the full 3D motion
-before publishing. The dashboard checks this PC's GPU, dependencies and model files.
+before publishing. Import a room scan, check its placement, and publish it with the
+lesson. The dashboard checks this PC's GPU, dependencies and model files.
 
 See the [publishing guide](site/README.md) to add prepared clips, or the
 [workspace guide](teaching_suite/README.md) for local teaching and processing.

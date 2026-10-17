@@ -51,7 +51,24 @@ async function job(route,body){const created=await post(route,body);assert.equal
  await page.locator('[data-reviewed3d=gpu-dashboard-test]').check();await page.getByRole('button',{name:'Save 3D review',exact:true}).click();await wait(s=>s.reconstructions['gpu-dashboard-test'].reviewed);
  fs.appendFileSync(scenePath,'\n');result=await job('publish',{reviewed:true});assert.equal(result.status,'failed');assert.match(result.message,/reviewed 3D scene changed/);fs.writeFileSync(scenePath,sceneBytes);
  assert.equal((await job('preview',{})).status,'complete');await page.waitForFunction(()=>!document.getElementById('openPreview').hidden);await page.locator('#reviewedPreview').check();
- result=await job('publish',{reviewed:true});assert.equal(result.status,'complete',result.message);value=await state();assert.equal(value.staged.length,0);pass('Unreviewed/stale 3D blocks publication; approved exact scene and final preview publish successfully to the isolated local Git remote');
+ if(process.env.SYSTEMA_ADMIN_TEST_ROOM){
+  await page.locator('#roomForm').evaluate(form=>form.closest('details').open=true);
+  await page.locator('#roomPath').fill(process.env.SYSTEMA_ADMIN_TEST_ROOM);await page.locator('#roomTitle').fill('Training room · 17 October');await page.locator('#importRoom').click();
+  value=await wait(s=>s.rooms.length&&!s.jobs.some(j=>j.status==='running'));assert.equal(value.rooms[0].splats,1117363);
+  await page.locator('[data-attach-room=gpu-dashboard-test]').click();await wait(s=>s.clips[0].environment&&!s.jobs.some(j=>j.status==='running'));
+  assert.equal((await job('preview',{})).status,'complete');await page.locator('[data-review3d=gpu-dashboard-test]').click();
+  await viewer.locator('#studioStatus[data-state=ready]').waitFor();assert.equal(await viewer.locator('#studioBadge').innerText(),'Alignment estimate');
+  await viewer.locator('.studio-alignment summary').click();await viewer.locator('#studio-z').fill('1.25');await viewer.locator('#studio-z').dispatchEvent('change');
+  await page.locator('[data-save-room=gpu-dashboard-test]').click();await wait(s=>!s.preview&&!s.jobs.some(j=>j.status==='running'));
+  const roomPath=path.join(PROJECT,'site/clips/gpu-dashboard-test/environment.json'),room=JSON.parse(fs.readFileSync(roomPath));assert.equal(room.alignment.z,1.25);assert(!room.calibration);
+  assert.equal((await post('clips/gpu-dashboard-test/room-placement',{studio:room.id,sourceSha256:'wrong',alignment:room.alignment})).httpStatus,400);
+  assert.equal((await job('preview',{})).status,'complete');
+  const splat=path.join(PROJECT,'site/clips/gpu-dashboard-test/studio.splat'),bytes=fs.readFileSync(splat);const changed=Buffer.from(bytes);changed[24]^=1;fs.writeFileSync(splat,changed);
+  const stale=await job('publish',{reviewed:true});assert.equal(stale.status,'failed');assert.match(stale.message,/fresh preview/);fs.writeFileSync(splat,bytes);
+  await page.screenshot({path:path.join(OUT,'room-review-desktop.png'),fullPage:true});
+  pass('Today’s real 1.1-million-Gaussian scan imports on CPU, renders in review, saves placement, rejects wrong-source placement and invalidates publication when scan bytes change');
+ }
+ await page.locator('#reviewedPreview').check();await page.locator('#publishVideos').click();value=await wait(s=>s.staged.length===0&&!s.jobs.some(j=>j.status==='running'));result=value.jobs.at(-1);assert.equal(result.status,'complete',result.message);pass('Unreviewed/stale 3D blocks publication; approved exact scene and final preview publish successfully to the isolated local Git remote');
  await page.locator('#closeSceneReview').click();for(const width of [390,768,1500]){await page.setViewportSize({width,height:1000});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(OUT,`dashboard-${width}.png`),fullPage:true});}
  assert.deepEqual(report.errors,[]);assert.deepEqual(report.failed,[]);pass('Desktop, phone and tablet dashboard layouts have no overflow, JavaScript errors or server errors');
 }catch(error){report.failure=error.stack;throw error;}finally{fs.writeFileSync(path.join(OUT,'verification.json'),JSON.stringify(report,null,2));if(browser)await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});
