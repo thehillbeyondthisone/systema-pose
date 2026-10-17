@@ -5,6 +5,8 @@ A movement study viewer for watching Systema lessons, exploring motion in 2D and
 
 **[Open the live movement library](https://thehillbeyondthisone.github.io/systema-pose/)**
 
+[Explore the scanned studio in 3D](https://thehillbeyondthisone.github.io/systema-pose/scene.html?clip=multiple-attackers) with animated participants and a camera matched to the footage.
+
 ## Explore a lesson
 
 - Watch the footage and step through it frame by frame.

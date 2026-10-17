@@ -37,3 +37,6 @@ node_modules/
 *.key
 .DS_Store
 Thumbs.db
+
+# Full-resolution studio source stays local.
+/*.ply

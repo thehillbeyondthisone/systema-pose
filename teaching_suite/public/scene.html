@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Systema · Shared 3D scene</title>
+  <title>Systema · Studio motion</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="views.css">
   <link rel="stylesheet" href="scene.css">
-  <script type="importmap">{"imports":{"three":"./vendor/three/three.module.js"}}</script>
+  <script type="importmap">{"imports":{"three":"./vendor/three/three.module.js","three/addons/":"./vendor/three/addons/"}}</script>
   <script type="module" src="scene.js"></script>
 </head>
 <body class="scene-page">
@@ -17,7 +17,7 @@
   </header>
   <main class="scene-main">
     <section class="lesson-heading scene-heading">
-      <div><p class="eyebrow">MULTIPLE ATTACKERS · 18–30 SECONDS</p><h1>Examine the exchange</h1></div>
+      <div><p class="eyebrow">MULTIPLE ATTACKERS · 18–30 SECONDS</p><h1>Study movement in the studio</h1></div>
       <p id="sceneStatus" class="scene-status" role="status">Loading the reconstructed scene…</p>
     </section>
     <section class="workspace-controls scene-view-controls" aria-label="Scene views">
@@ -30,15 +30,16 @@
     <div id="sceneGrid" class="scene-grid">
       <section id="scenePanel" class="viewer-panel" aria-label="3D movement viewer">
         <div class="view-toolbar">
-          <strong>Shared 3D scene</strong>
+          <strong>Studio + movement</strong>
           <div class="controls" role="group" aria-label="Camera angle">
-            <button data-camera="front" aria-pressed="true" disabled>Front</button>
+            <button data-camera="source" aria-pressed="false" disabled>Source camera</button>
+            <button data-camera="front" aria-pressed="false" disabled>Front</button>
             <button data-camera="side" aria-pressed="false" disabled>Side</button>
             <button data-camera="overhead" aria-pressed="false" disabled>Overhead</button>
             <button id="resetCamera" disabled>Reset</button>
           </div>
         </div>
-        <div id="orbitStage" class="orbit-stage" aria-label="Orbitable skeleton scene">
+        <div id="orbitStage" class="orbit-stage" aria-label="Orbitable studio Gaussian splat and animated stick figures">
           <p id="emptyScene">The reconstructed scene is being prepared. You can still review the source footage.</p>
         </div>
       </section>
@@ -68,6 +69,40 @@
     </div>
     <section id="sceneDetailsPanel" class="scene-details-panel" aria-label="Scene options and estimates">
       <div class="participant-row"><span>Show people</span><div id="scenePeople" class="participant-buttons"></div></div>
+      <details id="studioDetails" class="studio-disclosure" open>
+        <summary>Studio environment <span id="studioBadge" class="studio-badge">Alignment estimate</span></summary>
+        <p id="studioStatus" role="status">Waiting for motion…</p>
+        <button id="studioRetry" hidden>Retry studio</button>
+        <fieldset id="studioControls" disabled>
+          <legend class="sr-only">Studio display and alignment</legend>
+          <div class="studio-display">
+            <label class="check"><input id="studioVisible" type="checkbox" checked>Show studio</label>
+            <label class="check"><input id="studioXray" type="checkbox" checked>Figures through walls</label>
+            <label class="check"><input id="studioGrid" type="checkbox">Ground guide</label>
+            <label>Studio opacity <input id="studioOpacity" type="range" min="0.1" max="1" step="0.05" value="0.85"></label>
+          </div>
+          <p id="studioCalibrationHelp" class="studio-help">The studio is matched to room landmarks in the footage. Figure size and depth use model estimates; room dimensions have not been physically measured. Turn off Figures through walls to study occlusion.</p>
+          <details class="studio-alignment">
+            <summary>Adjust studio alignment</summary>
+            <div class="studio-fields">
+              <label>Left / right<input id="studio-x" type="number" min="-1000" max="1000" step="0.05"></label>
+              <label>Floor height<input id="studio-y" type="number" min="-1000" max="1000" step="0.01"></label>
+              <label>Forward / back<input id="studio-z" type="number" min="-1000" max="1000" step="0.05"></label>
+              <label>Tilt (degrees)<input id="studio-pitch" type="number" min="-360" max="360" step="1"></label>
+              <label>Turn (degrees)<input id="studio-yaw" type="number" min="-360" max="360" step="1"></label>
+              <label>Roll (degrees)<input id="studio-roll" type="number" min="-360" max="360" step="1"></label>
+              <label>Room scale<input id="studio-scale" type="number" min="0.01" max="100" step="0.01"></label>
+            </div>
+            <div class="studio-actions">
+              <button id="studioFloor">Pick three floor points</button>
+              <button id="studioReset">Restore calibration</button>
+              <button id="studioExport">Export alignment</button>
+              <label class="file-button">Import alignment<input id="studioImport" type="file" accept="application/json,.json" class="studio-file"></label>
+            </div>
+            <p class="studio-help">Adjustments are remembered for this studio calibration and lesson. Restore calibration to return to the footage match. Export an adjustment to share or back it up; body contact remains an estimate.</p>
+          </details>
+        </fieldset>
+      </details>
       <details id="contactDetails" class="contact-disclosure">
         <summary><span>Contact visualization</span><span class="contact-summary-hint">Explore estimated intersections</span></summary>
         <section class="contact-controls" aria-label="Contact effects">
@@ -81,7 +116,7 @@
         </section>
       </details>
       <div class="viewer-footer"><span class="estimate-mark">3D estimates</span><span id="frameQuality">Compare depth and contact with the footage.</span></div>
-      <p id="orbitHelp" class="scene-help">Drag to orbit · Scroll or pinch to zoom · Right-drag or two fingers to pan.</p>
+      <p id="orbitHelp" class="scene-help">Source camera follows the footage. Drag to orbit · Scroll or pinch to zoom · Reset returns to the source camera.</p>
     </section>
   </main>
 </body>

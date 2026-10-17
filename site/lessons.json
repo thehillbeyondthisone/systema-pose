@@ -6,18 +6,39 @@
       "title": "Multiple attackers",
       "description": "Study a short group exchange. Follow each participant, compare spacing in 3D, and record what you notice.",
       "category": "Training",
-      "tags": ["Spacing", "Multiple people", "Contact"],
+      "tags": [
+        "Spacing",
+        "Multiple people",
+        "Contact"
+      ],
       "video": "outputs/pilot/source-reference.mp4",
       "motion": "teaching_suite/public/motion.json",
       "poster": "site/clips/multiple-attackers/poster.jpg",
       "frameMapping": "index",
       "scene": "outputs/3d-pilot/scene.json",
       "people": [
-        {"id": 1, "name": "Instructor", "color": "#ffc044"},
-        {"id": 2, "name": "Grey shirt", "color": "#4ad4ff"},
-        {"id": 3, "name": "Blue shirt", "color": "#ea69e6"},
-        {"id": 4, "name": "White shirt", "color": "#7cea91"}
-      ]
+        {
+          "id": 1,
+          "name": "Instructor",
+          "color": "#ffc044"
+        },
+        {
+          "id": 2,
+          "name": "Grey shirt",
+          "color": "#4ad4ff"
+        },
+        {
+          "id": 3,
+          "name": "Blue shirt",
+          "color": "#ea69e6"
+        },
+        {
+          "id": 4,
+          "name": "White shirt",
+          "color": "#7cea91"
+        }
+      ],
+      "environment": "teaching_suite/public/studio/environment.json"
     }
   ]
 }

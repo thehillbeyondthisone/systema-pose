@@ -5,6 +5,8 @@ import json
 import os
 import re
 import socket
+import subprocess
+import sys
 import threading
 import uuid
 from http.cookies import SimpleCookie
@@ -42,6 +44,13 @@ def write_json(path, value):
     os.replace(temp,path)
 
 def initialize():
+    studio_source=Path(os.environ.get('SYSTEMA_STUDIO_PLY',str(PROJECT/'Martial Arts Studio - Best Reviewed.ply')))
+    if studio_source.is_file() and not (PUBLIC/'studio/studio.splat').is_file():
+        print('Preparing the studio Gaussian scan for the viewer...',flush=True)
+        try:
+            subprocess.run([sys.executable,str(PROJECT/'work/prepare_studio.py'),'--source',str(studio_source)],check=True)
+        except subprocess.CalledProcessError:
+            print('Studio preparation failed. The motion viewer remains available.',flush=True)
     if not (PUBLIC/'motion.json').exists():
         rows=[json.loads(line) for line in (PROJECT/'outputs/pilot/poses-tracked.jsonl').read_text(encoding='utf-8').splitlines()]
         frames=[{'frame':r['source_frame_index'],'people':[{'id':p['track_id'],'xy':p['keypoints_xy'][:23],

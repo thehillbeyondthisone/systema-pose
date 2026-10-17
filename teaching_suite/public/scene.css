@@ -19,7 +19,7 @@
 .viewer-sync-label{font-size:.75rem;color:var(--muted)}
 .orbit-stage,.scene-footage-stage{position:relative;height:var(--scene-stage-height);background:#142234}
 .orbit-stage{touch-action:none}
-.orbit-stage canvas{display:block;width:100%;height:100%}
+.orbit-stage canvas{display:block;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
 .orbit-stage>p{margin:0;color:#c7d5e3;padding:24px;line-height:1.6;max-width:420px;font-size:.875rem}
 .scene-footage-stage video{display:block;width:100%;height:100%;object-fit:contain;background:#142234}
 .scene-transport{position:sticky;bottom:max(12px,env(safe-area-inset-bottom));z-index:7;display:flex;align-items:center;gap:12px;margin:12px 0 16px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 5px 20px #1722340d}
@@ -55,3 +55,25 @@
 @media(max-width:600px){.scene-main{--scene-stage-height:clamp(220px,38dvh,340px)}.scene-heading{display:block}.scene-heading p.scene-status{max-width:none;margin-top:10px;padding:8px 10px;font-size:.75rem}.scene-view-controls .view-presets button{min-width:0}.scene-grid .view-toolbar{flex-wrap:wrap;padding:9px 12px}.scene-grid .controls{margin-left:auto;gap:4px}.scene-grid .controls button{padding-inline:8px}.viewer-sync-label{font-size:.7rem}.scene-transport{flex-wrap:wrap;gap:8px;margin-bottom:12px;bottom:max(8px,env(safe-area-inset-bottom))}.scene-transport .play-control{width:44px;min-height:44px}.scene-speed{margin-left:auto;font-size:.75rem;gap:6px}.scene-speed select{max-width:102px}.scene-timeline{order:1;flex-basis:100%;width:100%}.scene-transport #sceneTime{font-size:.75rem;min-width:60px}.scene-details-panel .participant-row{padding:9px 12px}.contact-disclosure summary{padding-inline:12px}.contact-summary-hint{display:none}.contact-controls{padding-inline:12px}.scene-details-panel .viewer-footer,.scene-help{padding:10px 12px}.scene-details-panel .participant-buttons{gap:4px 12px}}
 @media(max-width:380px){.scene-grid .view-toolbar .controls{width:100%;margin-left:0}.scene-grid .controls button{flex:1}}
 @media(max-height:579px) and (min-width:901px){.scene-main{--scene-stage-height:280px}.scene-transport{position:relative;bottom:auto}}
+
+/* Studio scan controls sit below the shared player. */
+.studio-disclosure{border-top:1px solid var(--line);padding:12px 16px}
+.studio-disclosure>summary{cursor:pointer;font-weight:650;min-height:44px;align-content:center}
+.studio-badge{font-weight:500;font-size:.7rem;margin-left:8px;background:#fff1cf;color:#705013;border-radius:5px;padding:4px 6px}
+#studioStatus,.studio-help{font-size:.8rem;line-height:1.5;color:#596a7f;margin:8px 0 12px}
+#studioStatus[data-state=error]{color:#a32b32}
+#studioControls{border:0;margin:0;padding:0;min-width:0}
+.studio-display{display:flex;align-items:center;gap:12px 24px;flex-wrap:wrap;font-size:.8rem}
+.studio-display>label:last-child{display:flex;align-items:center;gap:10px}
+.studio-alignment>summary{cursor:pointer;min-height:44px;align-content:center;font-size:.85rem}
+.studio-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:12px 0}
+.studio-fields label{font-size:.8rem;color:#596a7f}
+.studio-fields input{display:block;width:100%;min-height:44px;border:1px solid #cbd5e2;border-radius:8px;padding:8px;margin-top:6px;color:var(--ink);background:#fff}
+.studio-actions{display:flex;gap:8px;flex-wrap:wrap}
+.studio-file{max-width:200px;margin-left:8px;font-size:.75rem}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:600px){.studio-disclosure{padding:12px}.studio-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.studio-actions>*{width:100%}.studio-file{max-width:100%;margin:6px 0 0}.studio-badge{display:inline-block;margin-block:4px}}
+
+.studio-badge.calibrated{background:#eaf4f7;color:#244e62}
+.scene-grid .controls [data-camera="source"]{min-width:88px}
+@media(max-width:380px){.scene-grid .view-toolbar .controls{flex-wrap:wrap}.scene-grid .controls [data-camera="source"]{flex-basis:100%}}
