@@ -53,6 +53,8 @@
         <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z" fill="currentColor" stroke="none"/></svg>
       </button>
       <span id="sceneTime" aria-live="off">18.000s</span>
+      <span id="scenePlaybackScope" class="scene-playback-scope" aria-live="polite">Full clip</span>
+      <button id="sceneFullPlayback" hidden>Full clip</button>
       <div class="scene-timeline">
         <button id="scenePrevious" class="icon-control" aria-label="Previous frame" title="Previous frame">
           <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14m12-14L8 12l10 7Z"/></svg>
@@ -69,6 +71,20 @@
     </div>
     <section id="sceneDetailsPanel" class="scene-details-panel" aria-label="Scene options and estimates">
       <div class="participant-row"><span>Show people</span><div id="scenePeople" class="participant-buttons"></div></div>
+      <details id="figureDetails" class="teaching-disclosure" open>
+        <summary>Figure options <span class="teaching-summary-hint">Swap styles while playing</span></summary>
+        <div class="figure-options">
+          <div class="figure-options-heading">
+            <label>All participants <select id="figureStyle" disabled><option value="skeleton">Line skeleton</option><option value="bones">Solid skeleton</option><option value="mannequin" selected>Rigged mannequin</option><option value="dummy">Training dummy</option><option value="mixed" disabled>Individual styles</option></select></label>
+            <p>Use a different figure for each person. Every style follows the same reconstructed motion.</p>
+          </div>
+          <div id="figurePeople" class="figure-people"></div>
+        </div>
+      </details>
+      <details id="strikeDetails" class="teaching-disclosure">
+        <summary>Strike illustrations <span class="teaching-summary-hint">Place, emphasize and replay</span></summary>
+        <div id="strikeCueEditor"><p class="teaching-help">Loading teaching controls…</p></div>
+      </details>
       <details id="studioDetails" class="studio-disclosure" open>
         <summary>Studio environment <span id="studioBadge" class="studio-badge">Alignment estimate</span></summary>
         <p id="studioStatus" role="status">Waiting for motion…</p>

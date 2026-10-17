@@ -2,7 +2,12 @@ import * as THREE from 'three';
 import {OrbitControls} from './vendor/three/OrbitControls.js';
 import {findBoneContacts} from './contact_geometry.mjs';
 import {StudioEnvironment} from './studio-environment.js';
+import {FigureRig} from './figure-rig.js';
+import {StrikeCues} from './strike-cues.js';
 let studioEnvironment=null;
+let strikeCues=null, teachingPreviewEnd=null, figureStorageKey='';
+const figureStyles={skeleton:'Line skeleton',bones:'Solid skeleton',mannequin:'Rigged mannequin',dummy:'Training dummy'};
+let figureSettings={defaultStyle:'mannequin',participants:{}};
 
 const $=id=>document.getElementById(id), video=$('sceneVideo'), scrub=$('sceneScrub');
 const palette=['#ffc45f','#7bc7ed','#bda4ee','#94d8b8','#f29d91','#dfc688'];
@@ -124,14 +129,20 @@ function sceneUnavailable(){
 }
 
 function showFrame(index){
+  if(teachingPreviewEnd!==null&&index>=teachingPreviewEnd){
+    index=teachingPreviewEnd;video.pause();
+    if(video.currentTime>index/fps+1/fps)video.currentTime=index/fps;
+  }
   frame=Math.max(0,Math.min(frameCount-1,index));scrub.value=frame;
   $('sceneTime').textContent=`${(sourceStart+frame/fps).toFixed(3)}s`;
   scrub.setAttribute('aria-valuetext',`${(sourceStart+frame/fps).toFixed(3)} source seconds`);
   if(!motion)return;
   followSourceCamera();
-  const signature=JSON.stringify([frame,contactSettings,studioEnvironment?.ready&&studioEnvironment?.visible,studioEnvironment?.xray,[...objects.values()].map(object=>object.checkbox.checked)]);
+  const signature=JSON.stringify([frame,contactSettings,figureSettings,studioEnvironment?.ready&&studioEnvironment?.visible,studioEnvironment?.xray,[...objects.values()].map(object=>object.checkbox.checked)]);
   if(signature===displayedFrameSignature)return;
   displayedFrameSignature=signature;
+  const xray=Boolean(studioEnvironment?.ready&&studioEnvironment?.visible&&studioEnvironment?.xray);
+  strikeCues?.update(frame,{visibleIds:new Set([...objects].filter(([,object])=>object.checkbox.checked).map(([id])=>id)),xray});
   for(const object of objects.values())object.group.visible=false;
   for(const person of motion.frames[frame].people){
     const object=objects.get(String(person.id));if(!object)continue;
@@ -146,25 +157,37 @@ function showFrame(index){
     object.joints.geometry.attributes.position.array.set(person.xyz.flat());
     object.joints.geometry.attributes.position.needsUpdate=true;
     object.joints.geometry.computeBoundingSphere();
-    const solidVisible=contactSettings.enabled||Boolean(studioEnvironment?.ready&&studioEnvironment?.visible);
-    object.bones.visible=!solidVisible;object.joints.visible=!solidVisible;
-    object.solid.visible=solidVisible;
+    const style=figureSettings.participants[String(person.id)]||figureSettings.defaultStyle;
+    const rigged=style==='mannequin'||style==='dummy';
+    object.activeRigged=rigged;
+    const solidVisible=!rigged&&(style==='bones'||contactSettings.enabled);
+    object.bones.visible=!rigged&&!solidVisible;object.joints.visible=!rigged&&!solidVisible;
+    object.solid.visible=solidVisible||contactSettings.enabled;
     const radius=contactSettings.enabled?contactSettings.radius:.014;
-    const xray=studioEnvironment?.ready&&studioEnvironment?.visible&&studioEnvironment?.xray;
+    object.rig.group.visible=rigged;
+    if(rigged){
+      object.rig.setStyle(style);
+      const highlight=strikeCues?.getHighlight(person.id);
+      object.rig.update(person.xyz,{color:object.color,opacity,xray,highlightJoint:highlight?.joint,intensity:(highlight?.intensity||0)/5});
+    }
+    object.bones.material.depthTest=!xray;object.joints.material.depthTest=!xray;
+    object.bones.renderOrder=xray?1000:0;object.joints.renderOrder=xray?1000:0;
     for(const mesh of [...object.solidBones,...object.solidJoints]){
-      mesh.renderOrder=xray?1000:0;mesh.material.depthTest=!xray;mesh.material.depthWrite=!xray;
+      mesh.renderOrder=rigged&&contactSettings.enabled?1002:xray?1000:0;
+      mesh.material.depthTest=!xray;mesh.material.depthWrite=!xray;
     }
     for(let bone=0;bone<motion.edges.length;bone++){
       const [a,b]=motion.edges[bone], start=new THREE.Vector3(...person.xyz[a]), end=new THREE.Vector3(...person.xyz[b]);
       const delta=end.clone().sub(start), mesh=object.solidBones[bone], length=delta.length();
       mesh.position.copy(start).add(end).multiplyScalar(.5);
       mesh.scale.set(radius,length,radius);
-      mesh.visible=length>1e-8;
-      if(mesh.visible)mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.divideScalar(length));
+      mesh.visible=!rigged&&length>1e-8;
+      if(length>1e-8)mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.divideScalar(length));
       mesh.material.color.set(object.color);mesh.material.opacity=opacity;
     }
     person.xyz.forEach((xyz,joint)=>{
       const mesh=object.solidJoints[joint];mesh.position.set(...xyz);mesh.scale.setScalar(radius);
+      mesh.visible=!rigged;
       mesh.material.color.set(object.color);mesh.material.opacity=opacity;
     });
   }
@@ -173,6 +196,9 @@ function showFrame(index){
   const overlap=people.some(p=>p.overlappingSourceBoxes?.length);
   $('frameQuality').textContent=gaps?`${gaps} pose${gaps===1?'':'s'} uses an interpolated tracking box. Faded poses need source review; contact is unverified.`:overlap?'People overlap in the footage. Faded poses may follow the wrong limbs; contact is unverified.':'Depth and contact are estimates. Compare the poses with the footage.';
   showContacts();
+  renderer.domElement.dataset.figureStyles=JSON.stringify(Object.fromEntries([...objects.keys()].map(id=>[id,figureSettings.participants[id]||figureSettings.defaultStyle])));
+  renderer.domElement.dataset.rigCount=String([...objects].filter(([id,object])=>object.group.visible&&['mannequin','dummy'].includes(figureSettings.participants[id]||figureSettings.defaultStyle)).length);
+  renderer.domElement.dataset.strikeCueCount=String(strikeCues?.group.children.filter(child=>child.visible).length||0);
 }
 function showContacts(){
   contactMarkers.visible=contactSettings.enabled;
@@ -188,8 +214,8 @@ function showContacts(){
   const clusters=[], pairs=new Map();
   for(const contact of contacts){
     for(const [id,bone] of [[contact.personA,contact.boneA],[contact.personB,contact.boneB]]){
-      const object=objects.get(id);object.solidBones[bone].material.color.set('#ffe17a');
-      motion.edges[bone].forEach(joint=>object.solidJoints[joint].material.color.set('#ffe17a'));
+      const object=objects.get(id);object.solidBones[bone].material.color.set('#ffe17a');object.solidBones[bone].visible=true;
+      motion.edges[bone].forEach(joint=>{object.solidJoints[joint].material.color.set('#ffe17a');object.solidJoints[joint].visible=true;});
     }
     const key=contact.personA+':'+contact.personB;
     pairs.set(key,(pairs.get(key)||0)+1);
@@ -209,7 +235,9 @@ function showContacts(){
     $('contactList').append(item);
   }
 }
-function seek(index){video.pause();video.currentTime=Math.max(0,Math.min(frameCount-1,index))/fps;showFrame(index);}
+function clearTeachingPreview(){teachingPreviewEnd=null;$('scenePlaybackScope').textContent='Full clip';$('sceneFullPlayback').hidden=true;}
+function seek(index){clearTeachingPreview();video.pause();video.currentTime=Math.max(0,Math.min(frameCount-1,index))/fps;showFrame(index);}
+$('sceneFullPlayback').addEventListener('click',()=>{clearTeachingPreview();video.play().catch(()=>{$('sceneStatus').textContent='Tap Play to continue the footage.';});});
 scrub.addEventListener('input',()=>seek(Number(scrub.value)));
 $('scenePrevious').addEventListener('click',()=>seek(frame-1));
 $('sceneNext').addEventListener('click',()=>seek(frame+1));
@@ -218,6 +246,7 @@ video.addEventListener('timeupdate',()=>showFrame(Math.floor(video.currentTime*f
 video.addEventListener('seeked',()=>showFrame(Math.floor(video.currentTime*fps+0.001)));
 $('scenePlay').addEventListener('click',async()=>{
   if(!video.paused){video.pause();return;}
+  if(teachingPreviewEnd===null||frame>=teachingPreviewEnd)clearTeachingPreview();
   try{if(video.ended)seek(0);await video.play();}catch{$('sceneStatus').textContent='Tap Play again to start the footage.';}
 });
 function playbackIcon(){
@@ -319,7 +348,16 @@ async function load(){
     const expected=manifest.reconstruction?.expectedParticipants;
     if(Number.isInteger(expected)&&data.people.length!==expected)throw Error(`The scene is being extended to all ${expected} participants.`);
     motion=data;
+    figureStorageKey=`systema-figures-v1:${data.sourceSha256}`;
+    try{
+      const saved=JSON.parse(localStorage.getItem(figureStorageKey));
+      if(saved&&Object.hasOwn(figureStyles,saved.defaultStyle)&&saved.participants&&typeof saved.participants==='object'){
+        figureSettings={defaultStyle:saved.defaultStyle,participants:Object.fromEntries(Object.entries(saved.participants).filter(([id,style])=>data.people.some(person=>String(person.id)===id)&&Object.hasOwn(figureStyles,style)))};
+      }
+    }catch{}
     const stage=$('orbitStage');world=new THREE.Scene();world.background=new THREE.Color('#142234');
+    world.add(new THREE.HemisphereLight('#ffffff','#52637b',2));
+    const figureLight=new THREE.DirectionalLight('#fff3df',2.5);figureLight.position.set(3,7,5);world.add(figureLight);
     contactMarkers=new THREE.Group();world.add(contactMarkers);
     renderer=new THREE.WebGLRenderer({antialias:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     camera=new THREE.PerspectiveCamera(48,1,0.01,1000);stage.append(renderer.domElement);
@@ -346,12 +384,40 @@ async function load(){
         const mesh=new THREE.Mesh(sphereGeometry,new THREE.MeshBasicMaterial({color,transparent:true}));solid.add(mesh);solidJoints.push(mesh);
       }
       group.add(solid);
+      const rig=new FigureRig({jointNames:motion.jointNames,edges:motion.edges,color});group.add(rig.group);
       const label=document.createElement('label'), checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=true;
       label.className='check';label.style.setProperty('--participant-color',color);
       const key=document.createElement('span');key.className='participant-key';key.setAttribute('aria-hidden','true');
       label.append(checkbox,key,document.createTextNode(person.name));$('scenePeople').append(label);
-      checkbox.addEventListener('change',()=>showFrame(frame));objects.set(String(person.id),{group,bones,joints,checkbox,solid,solidBones,solidJoints,color});
+      checkbox.addEventListener('change',()=>showFrame(frame));objects.set(String(person.id),{group,bones,joints,checkbox,solid,solidBones,solidJoints,color,rig});
+      const styleLabel=document.createElement('label'),select=document.createElement('select');
+      styleLabel.className='figure-person';styleLabel.style.setProperty('--participant-color',color);
+      const name=document.createElement('span');name.textContent=person.name;
+      select.id=`figure-style-${person.id}`;select.setAttribute('aria-label',`Figure style for ${person.name}`);
+      for(const [value,title] of Object.entries(figureStyles))select.add(new Option(title,value));
+      select.value=figureSettings.participants[String(person.id)]||figureSettings.defaultStyle;
+      select.addEventListener('change',()=>{figureSettings.participants[String(person.id)]=select.value;updateFigureStyles();});
+      styleLabel.append(name,select);$('figurePeople').append(styleLabel);
     }
+    function updateFigureStyles(){
+      const values=[...$('figurePeople').querySelectorAll('select')].map(select=>select.value);
+      $('figureStyle').value=values.every(value=>value===values[0])?values[0]:'mixed';
+      try{localStorage.setItem(figureStorageKey,JSON.stringify(figureSettings));}catch{}
+      displayedFrameSignature='';showFrame(frame);
+    }
+    $('figureStyle').disabled=false;
+    $('figureStyle').addEventListener('change',()=>{
+      figureSettings={defaultStyle:$('figureStyle').value,participants:{}};
+      for(const select of $('figurePeople').querySelectorAll('select'))select.value=figureSettings.defaultStyle;
+      updateFigureStyles();
+    });
+    strikeCues=new StrikeCues({world,motion,storageKey:`systema-strikes-v1:${location.pathname}:${motion.sourceSha256}`,container:$('strikeCueEditor'),
+      onSeek:seek,onChange:()=>{displayedFrameSignature='';showFrame(frame);},
+      onPlayPreview:({startFrame,endFrame})=>{
+        seek(startFrame);teachingPreviewEnd=endFrame;$('scenePlaybackScope').textContent='Strike preview';$('sceneFullPlayback').hidden=false;
+        video.play().catch(()=>{$('sceneStatus').textContent='Tap Play to preview this strike.';});
+      }});
+    updateFigureStyles();
     new ResizeObserver(resizeSceneCanvas).observe(stage);resizeSceneCanvas();
     $('emptyScene').hidden=true;
     for(const button of document.querySelectorAll('[data-camera]')){
