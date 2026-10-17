@@ -26,7 +26,7 @@
   const shown = new Set([1,2,3,4]);
   let motion, lesson, sharedNotes = [], ownNotes = [], selected = null, draft = null, frameIndex = 0;
   let frameMap = new Map(), frameCount = 360;
-  let renderRequest = null;
+  let renderRequest = null, fitRequest = null, playbackMode = 'clip';
   const viewStorageKey = 'systema-workspace-views-v1';
   const visualLabels = {video:'Footage', overlay:'Footage + motion', motion:'Motion only'};
   const presets = {
@@ -96,6 +96,42 @@
   const seconds = value => `${Number(value).toFixed(2)}s`;
   const sourceTime = () => motion.sourceStart + video.currentTime;
   const currentFrame = () => frameMap.get(frameIndex) || {people:[]};
+  function fitViewer() {
+    cancelAnimationFrame(fitRequest);
+    fitRequest = requestAnimationFrame(() => {
+      const view = $('movementView');
+      if (innerWidth <= 900 || innerHeight < 580) {
+        view.style.removeProperty('--stage-max-height');
+        return;
+      }
+      const primaryControls = $('lessonTransport').offsetHeight + $('lessonPlaybackOptions').offsetHeight;
+      const available = innerHeight - Math.max(0,view.getBoundingClientRect().top) - primaryControls - 20;
+      view.style.setProperty('--stage-max-height',`${Math.max(160,Math.floor(available))}px`);
+    });
+  }
+  function updatePlayback() {
+    const passage = playbackMode === 'passage' && selected;
+    $('play').classList.toggle('is-playing',!video.paused && !video.ended);
+    $('play').setAttribute('aria-label',`${video.paused ? 'Play' : 'Pause'} ${passage ? 'passage' : 'full clip'}`);
+    $('playbackScope').textContent = passage ? `Passage · ${seconds(selected.start)}–${seconds(selected.end)}` : 'Full clip';
+    $('playbackScope').classList.toggle('passage-mode',Boolean(passage));
+    $('playFullClip').hidden = !passage;
+    $('replayPassage').hidden = !selected;
+    $('loopPassage').closest('label').hidden = !selected;
+    $('loopPassage').disabled = !selected;
+    $('selectedPassage').hidden = !selected;
+    if (selected && motion) {
+      const duration = motion.sourceEnd-motion.sourceStart;
+      $('selectedPassage').style.left = `${(selected.start-motion.sourceStart)/duration*100}%`;
+      $('selectedPassage').style.width = `${(selected.end-selected.start)/duration*100}%`;
+      $('scrub').setAttribute('aria-description',`Selected passage: ${seconds(selected.start)} to ${seconds(selected.end)}. Use Play passage to replay it.`);
+    } else $('scrub').removeAttribute('aria-description');
+  }
+  function fullClipMode() {
+    playbackMode = 'clip';
+    $('loopPassage').checked = false;
+    updatePlayback();
+  }
   const noteTarget = note => note.trackId ? `${people[note.trackId].name}${note.jointIndex === null ? '' : ' · ' + joints[note.jointIndex].toLowerCase()}` : 'Scene';
   function validPoint(person, joint) {
     // Model scores are uncalibrated; this only suppresses the weakest estimates.
@@ -185,18 +221,23 @@
     frameIndex = Math.max(0,Math.min(frameCount-1,Math.floor(video.currentTime * motion.fps + .01)));
     $('scrub').value = String(frameIndex);
     $('currentTime').textContent = `${sourceTime().toFixed(3)}s`;
+    $('scrub').setAttribute('aria-valuetext',`${sourceTime().toFixed(3)} source seconds`);
+    const sceneHref = site ? site.link('scene.html',lesson.id,frameIndex) : `/scene.html?frame=${frameIndex}`;
+    for (const id of ['sceneLink','sceneShortcut']) {
+      if ($(id).getAttribute('href') !== sceneHref) $(id).setAttribute('href',sceneHref);
+    }
     const time = sourceTime();
     const overlap = (time >= 20.5 && time <= 25.5) || time >= 28;
     $('motionCaution').textContent = lesson.schemaVersion === 2
       ? frameMap.has(frameIndex) ? 'Unreviewed estimates. Participant identities may change at overlaps.' : 'No skeletons selected for this part of the footage.'
       : overlap ? 'People overlap here. Check the estimates against the footage.' : 'Compare the skeleton with the footage at overlaps.';
     $('stage').classList.toggle('seeking',video.seeking);
-    drawSkeleton(); renderAnnotations();
+    drawSkeleton(); renderAnnotations(); updatePlayback();
   }
   function tick() {
     renderRequest = null;
     if (video.paused || video.ended) return;
-    if (selected && sourceTime() >= selected.end - .01) {
+    if (playbackMode === 'passage' && selected && sourceTime() >= selected.end - .01) {
       if ($('loopPassage').checked) video.currentTime = selected.start - motion.sourceStart;
       else { video.pause(); seek(selected.end); return; }
     }
@@ -237,13 +278,14 @@
   }
   function closeDetail() {
     selected = null; $('noteDetail').hidden = true;
+    fullClipMode();
     $('noteList').hidden = false; $('closeDetail').hidden = true; $('replayPassage').disabled = true;
     renderList(); render();
   }
   function openNote(note) {
     if (draft) return;
     applyViews({...views, list:true});
-    video.pause(); selected = note; seek(note.start);
+    video.pause(); selected = note; fullClipMode(); seek(note.start);
     $('detailTitle').textContent = note.title;
     $('detailMeta').textContent = `${seconds(note.start)}–${seconds(note.end)} · ${noteTarget(note)}${note.sample ? ' · Sample prompt' : ''}`;
     $('detailText').textContent = note.text || 'This older annotation has no text explanation. Edit it to add your observation.';
@@ -271,6 +313,7 @@
     draft = note ? structuredClone(note) : {title:'',text:'',start,end:Math.min(motion.sourceEnd,start+2),trackId:0,jointIndex:null,anchor:{x:.5,y:.5}};
     delete draft.audio;
     selected = null;
+    fullClipMode();
     $('editorHeading').textContent = note ? 'Edit annotation' : 'Add annotation';
     $('noteTitle').value = draft.title; $('noteText').value = draft.text;
     $('noteStart').value = String(draft.start); $('noteEnd').value = String(draft.end);
@@ -321,12 +364,12 @@
       const personal = await json(api('/api/annotations'));
       mergeNotes(personal.notes);
       if (site) {
-        $('sceneLink').hidden = !lesson.scene;
+        $('sceneLink').hidden = $('sceneShortcut').hidden = !lesson.scene;
         document.querySelector('.author-footer p').textContent = 'Your annotations stay in this browser on this device. Back them up before clearing site data or switching browsers.';
         $('noteBackup').hidden = false;
       } else if ($('sceneLink') && !projectId && !snapshotId && lesson.schemaVersion !== 2) {
         fetch('/3d-pilot/manifest.json', {cache:'no-store'}).then(response => response.ok ? response.json() : null).then(manifest => {
-          if (manifest?.status === 'reconstructed_awaiting_review') $('sceneLink').hidden = false;
+          if (manifest?.status === 'reconstructed_awaiting_review') $('sceneLink').hidden = $('sceneShortcut').hidden = false;
         }).catch(() => {});
       }
       motion = await json(!site && snapshotId && lesson.schemaVersion === 2 ? `/published/${snapshotId}/motion.json` : lesson.motion || 'motion.json');
@@ -342,8 +385,8 @@
         $('lessonTitle').textContent = lesson.title;
         $('lessonDescription').textContent = 'Review the skeletons in your selected passages. Pause to add an explanation.';
         $('lessonEyebrow').textContent = 'YOUR MOVEMENT LESSON';
-        $('lessonDuration').textContent = `${(motion.sourceEnd-motion.sourceStart).toFixed(1)} seconds`;
-        $('participantCount').textContent = `${lesson.people.length} estimated tracks`;
+        $('lessonDuration').textContent = `${Number((motion.sourceEnd-motion.sourceStart).toFixed(1))} seconds`;
+        $('participantCount').textContent = `${lesson.people.length} participants`;
         $('stage').style.aspectRatio = `${motion.width} / ${motion.height}`;
       }
       frameCount = Math.ceil((motion.sourceEnd-motion.sourceStart)*motion.fps);
@@ -355,6 +398,7 @@
       $('lessonDescription').textContent = site ? lesson.description : 'Explore the movement. Pause to add your own text annotations.';
       if (site) $('lessonEyebrow').textContent = `${lesson.category.toUpperCase()} · MOVEMENT LESSON`;
       canvas.width = motion.width; canvas.height = motion.height;
+      $('movementView').style.setProperty('--media-ratio',String(motion.width/motion.height));
       $('scrub').max = String(frameCount-1);
       joints.forEach((name,index) => { const option = document.createElement('option'); option.value = String(index); option.textContent = name; $('noteJoint').append(option); });
       people.slice(1).forEach((person,index) => {
@@ -370,24 +414,39 @@
         if (video.readyState >= 1) seek(motion.sourceStart + entryFrame / motion.fps);
         else video.addEventListener('loadedmetadata',() => seek(motion.sourceStart + entryFrame / motion.fps),{once:true});
       }
-      render();
+      render(); fitViewer();
     } catch (failure) { $('videoError').textContent = failure.message; $('videoError').hidden = false; $('addNote').disabled = true;  }
   }
 
-  video.addEventListener('play',() => { $('play').textContent = 'Ⅱ'; $('play').setAttribute('aria-label','Pause movement'); if (!renderRequest) renderRequest = requestAnimationFrame(tick); });
-  video.addEventListener('pause',() => { $('play').textContent = '▶'; $('play').setAttribute('aria-label','Play movement'); render(); });
+  video.addEventListener('play',() => { updatePlayback(); if (!renderRequest) renderRequest = requestAnimationFrame(tick); });
+  video.addEventListener('pause',render);
   video.addEventListener('seeking',render); video.addEventListener('seeked',render); video.addEventListener('timeupdate',render);
   video.addEventListener('error',() => { $('videoError').hidden = true; $('videoError').textContent = 'Video could not load. Reload the lesson to try again.'; $('videoError').hidden = false; });
   $('play').addEventListener('click',() => {
     if (!motion) return;
     if (!video.paused) video.pause();
-    else { if (selected && (sourceTime() >= selected.end-.01 || sourceTime() < selected.start)) seek(selected.start); else if (video.ended) seek(motion.sourceStart); play(); }
+    else { if (playbackMode === 'passage' && selected && (sourceTime() >= selected.end-.01 || sourceTime() < selected.start)) seek(selected.start); else if (video.ended) seek(motion.sourceStart); play(); }
   });
-  $('scrub').addEventListener('input',() => { if (motion) { video.pause(); seek(motion.sourceStart + Number($('scrub').value)/motion.fps); } });
-  $('previousFrame').addEventListener('click',() => { if (motion) { video.pause(); seek(motion.sourceStart+(frameIndex-1)/motion.fps); } });
-  $('nextFrame').addEventListener('click',() => { if (motion) { video.pause(); seek(motion.sourceStart+(frameIndex+1)/motion.fps); } });
+  $('scrub').addEventListener('input',() => { if (motion) { video.pause(); fullClipMode(); seek(motion.sourceStart + Number($('scrub').value)/motion.fps); } });
+  $('previousFrame').addEventListener('click',() => { if (motion) { video.pause(); fullClipMode(); seek(motion.sourceStart+(frameIndex-1)/motion.fps); } });
+  $('nextFrame').addEventListener('click',() => { if (motion) { video.pause(); fullClipMode(); seek(motion.sourceStart+(frameIndex+1)/motion.fps); } });
   $('speed').addEventListener('change',() => { video.playbackRate = Number($('speed').value); });
-  $('replayPassage').addEventListener('click',() => { if (selected) { seek(selected.start); play(); } });
+  $('replayPassage').addEventListener('click',() => { if (selected) { playbackMode = 'passage'; seek(selected.start); play(); } });
+  $('playFullClip').addEventListener('click',() => { fullClipMode(); $('play').focus({preventScroll:true}); if (video.ended) seek(motion.sourceStart); play(); });
+  $('loopPassage').addEventListener('change',() => {
+    if (!selected) return;
+    if ($('loopPassage').checked) {
+      playbackMode = 'passage';
+      if (sourceTime() < selected.start || sourceTime() >= selected.end) seek(selected.start);
+    }
+    updatePlayback();
+  });
+  $('lessonMute').addEventListener('click',() => { video.muted = !video.muted; });
+  video.addEventListener('volumechange',() => {
+    $('lessonMute').classList.toggle('is-muted',video.muted);
+    $('lessonMute').setAttribute('aria-pressed',String(video.muted));
+    $('lessonMute').setAttribute('aria-label',video.muted ? 'Unmute source audio' : 'Mute source audio');
+  });
   document.querySelectorAll('[data-preset]').forEach(button => button.addEventListener('click',() => applyViews(presets[button.dataset.preset])));
   $('chooseViews').addEventListener('click',() => { $('viewPicker').showModal(); document.body.classList.add('view-picker-open'); });
   $('closeViews').addEventListener('click',closeViews);
@@ -409,10 +468,10 @@
   document.querySelectorAll('input[name="movementView"]').forEach(input => input.addEventListener('change',() => applyViews({...views, visual:input.value})));
   $('showMomentNotes').addEventListener('change',() => applyViews({...views, moment:$('showMomentNotes').checked}));
   $('showAnnotationList').addEventListener('change',() => applyViews({...views, list:$('showAnnotationList').checked}));
-  $('sceneLink').addEventListener('click',event => {
+  ['sceneLink','sceneShortcut'].forEach(id => $(id).addEventListener('click',event => {
     if (draft) { event.preventDefault(); toast('Save or cancel your annotation before opening the 3D scene.'); return; }
-    $('sceneLink').href = site ? site.link('scene.html',lesson.id,frameIndex) : `/scene.html?frame=${frameIndex}`;
-  });
+    event.currentTarget.href = site ? site.link('scene.html',lesson.id,frameIndex) : `/scene.html?frame=${frameIndex}`;
+  }));
   $('closeDetail').addEventListener('click',closeDetail);
   $('jumpToNote').addEventListener('click',() => { if (selected) { video.pause(); seek(selected.start); if (innerWidth <= 900) $('stage').scrollIntoView({behavior:'smooth',block:'center'}); } });
   $('addNote').addEventListener('click',() => beginEdit());
@@ -463,7 +522,9 @@
     finally { $('deleteNote').disabled = false; }
   });
   ['noteTitle','noteText','noteStart','noteEnd'].forEach(id => $(id).addEventListener('input',render));
-  new ResizeObserver(render).observe($('movementView'));
+  new ResizeObserver(() => { render(); fitViewer(); }).observe($('movementView'));
+  new ResizeObserver(fitViewer).observe($('lessonPlaybackOptions'));
+  window.addEventListener('resize',fitViewer);
   $('annotationRail').addEventListener('scroll',render);
   document.addEventListener('keydown',event => {
     if (!motion || $('viewPicker').open || /INPUT|TEXTAREA|SELECT|BUTTON|A/.test(document.activeElement?.tagName)) return;

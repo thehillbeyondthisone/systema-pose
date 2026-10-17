@@ -33,3 +33,29 @@
 @media(max-width:600px){.workspace-controls{display:grid;grid-template-columns:1fr;gap:8px;padding:8px 0;margin-bottom:10px}.view-presets{width:100%;gap:3px}.view-presets button{flex:1;padding:10px 8px;font-size:.8rem;min-height:48px}.choose-views{max-width:none;min-width:0;min-height:48px;padding:8px 12px;gap:12px}.choose-views>span{display:flex;align-items:center;gap:12px;flex:1}.choose-views #viewSummary{margin:0;font-size:.7rem}.choose-views strong{font-size:.8rem}#workspace .notes-panel{scroll-margin-top:138px}.view-picker{position:fixed;inset:auto 0 0;margin:0;width:100%;max-width:none;max-height:calc(100dvh - max(16px,env(safe-area-inset-top)));border-radius:22px 22px 0 0;padding:22px 20px calc(18px + env(safe-area-inset-bottom))}.picker-heading{margin-bottom:18px}.picker-heading h2{font-size:1.25rem}.view-picker fieldset{margin-bottom:18px}.view-choice{min-height:72px}.panel-choice{min-height:72px}.picker-footer{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom));background:#fff;padding-bottom:4px}.toast{bottom:calc(16px + env(safe-area-inset-bottom))}}
 @media(max-height:600px) and (min-width:601px){.view-picker{max-height:calc(100dvh - 24px);padding:18px 22px}.picker-heading{margin-bottom:12px}.view-choice{min-height:64px}.panel-choice{min-height:64px}.picker-footer{bottom:-18px}}
 @media(prefers-reduced-motion:reduce){.view-switch,.view-switch::before{transition:none}}
+/* Keep primary navigation and playback close to the movement. */
+.workspace-controls{padding:6px 0;margin-bottom:12px;gap:12px}
+.view-presets{border-radius:12px;padding:3px}
+.view-presets button{min-height:44px;padding:8px 16px}
+.workspace-actions{display:flex;align-items:center;gap:10px;min-width:0}
+.choose-views{min-height:50px;min-width:170px;max-width:none;padding:6px 12px}
+.scene-shortcut{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;padding:9px 12px;text-decoration:none;color:var(--ink);font-size:.8rem;font-weight:650;background:#fff;border:1px solid #cbd5e2;border-radius:10px;white-space:nowrap}
+.scene-shortcut:hover{border-color:#8395ad;background:#fff9ec}
+#workspace .viewer-panel{top:78px}
+.movement-view .stage{width:min(100%,calc(var(--stage-max-height,9999px) * var(--media-ratio,1.777778)));margin-inline:auto}
+#workspace[data-visual="video"] .estimate-help{display:none}
+@media(min-width:901px){#workspace .lesson-heading{margin-bottom:8px}#workspace .lesson-heading h1{font-size:1.5rem;margin-bottom:0}#workspace #lessonDescription{display:none}#workspace .lesson-heading .eyebrow{margin-bottom:4px}}
+@media(max-width:900px){#workspace .viewer-panel{top:0}.workspace-actions{gap:8px}}
+@media(min-width:601px) and (max-width:760px){.workspace-controls{flex-wrap:wrap}.view-presets,.workspace-actions{width:100%}.view-presets button{flex:1}.choose-views{flex:1}}
+@media(max-width:600px){
+  .workspace-controls{gap:6px;padding:6px 0;margin-bottom:10px}.view-presets button{padding:8px;min-height:44px}
+  .workspace-actions{width:100%}.choose-views{flex:1;min-width:0;min-height:44px}
+  .choose-views>span{gap:8px}.choose-views #viewSummary{max-width:135px;display:block}
+  .scene-shortcut{font-size:.75rem;padding:8px 10px;gap:5px}.scene-shortcut .control-icon{width:18px;height:18px}
+}
+@media(max-width:600px) and (max-height:700px){
+  .lesson-page .topbar{min-height:56px;padding:8px 12px}.lesson-page .brand svg{height:28px}
+  #workspace{padding-top:10px}#workspace #lessonDescription{display:none}#workspace .lesson-heading{margin-bottom:8px}
+  #workspace .lesson-meta{margin-top:6px;gap:8px;font-size:.7rem}#workspace .lesson-heading .eyebrow{margin-bottom:4px}
+  #workspace .preset-extra{display:none}
+}

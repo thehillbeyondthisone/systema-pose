@@ -1,18 +1,88 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Systema · Shared 3D scene</title>
-<link rel="stylesheet" href="style.css"><link rel="stylesheet" href="scene.css"><link rel="stylesheet" href="views.css">
-<script type="importmap">{"imports":{"three":"./vendor/three/three.module.js"}}</script>
-<script type="module" src="scene.js"></script></head><body>
-<header class="topbar"><a class="brand lesson-return" href="/?demo=1">SYSTEMA<span class="brand-sub">Movement lessons</span></a><a href="/?demo=1" class="file-button lesson-return">Back to lesson</a></header>
-<main><section class="lesson-heading"><div><p class="eyebrow">MULTIPLE ATTACKERS · 18–30 SECONDS</p><h1>Examine the exchange</h1><p>Compare everyone together. Orbit the scene to explore spacing and contact.</p></div></section>
-<p id="sceneStatus" class="scene-status" role="status">Loading the reconstructed scene…</p>
-<section class="workspace-controls scene-view-controls" aria-label="Scene views"><div class="view-presets" role="group" aria-label="Choose scene views"><button data-scene-view="scene" aria-pressed="false">3D scene</button><button data-scene-view="video" aria-pressed="false">Footage</button><button data-scene-view="compare" aria-pressed="true" class="active">Compare</button></div></section>
-<div id="sceneGrid" class="scene-grid"><section id="scenePanel" class="viewer-panel"><div class="view-toolbar"><strong>Shared 3D scene</strong><div class="controls" role="group" aria-label="Camera angle"><button data-camera="front" aria-pressed="true" disabled>Front</button><button data-camera="side" aria-pressed="false" disabled>Side</button><button data-camera="overhead" aria-pressed="false" disabled>Overhead</button><button id="resetCamera" disabled>Reset</button></div></div>
-<div id="orbitStage" class="orbit-stage" aria-label="Orbitable skeleton scene"><p id="emptyScene">The reconstructed scene is being prepared. The footage remains available below.</p></div>
-<div class="participant-row"><span>Show people</span><div id="scenePeople" class="participant-buttons"></div></div>
-<section class="contact-controls" aria-label="Contact effects"><div class="contact-options"><label class="check"><input id="contactEffects" type="checkbox">Contact effects</label><label>Bone thickness<select id="boneThickness" disabled><option value="0.02">Thin</option><option value="0.035">Medium</option><option value="0.05">Wide</option></select></label></div><p class="contact-help">Glowing bones and orange spots mark intersections between participants in the 3D model. Thickness changes the visible bone shapes. Check the footage to interpret a strike or grab.</p><p id="contactStatus" role="status">Turn on contact effects to highlight intersecting 3D bones.</p><ul id="contactList" class="contact-list"></ul></section>
-<div class="viewer-footer"><span class="estimate-mark">3D estimates</span><span id="frameQuality">Depth, identity and contact need review against the footage.</span></div></section>
-<section id="sceneFootagePanel" class="viewer-panel"><div class="view-toolbar"><strong>Source footage</strong></div><video id="sceneVideo" src="media/source-reference.mp4" playsinline preload="metadata" controls></video></section></div>
-<div class="scene-transport"><button id="scenePlay" class="play-control" aria-label="Play movement">▶</button><span id="sceneTime">18.000s</span><button id="scenePrevious" aria-label="Previous frame">‹</button><input id="sceneScrub" type="range" min="0" max="359" value="0" aria-label="Scene frame"><button id="sceneNext" aria-label="Next frame">›</button><label>Speed <select id="sceneSpeed"><option value="1">Normal</option><option value="0.5">Half</option><option value="0.25">Quarter</option></select></label></div>
-<p id="orbitHelp" class="scene-help">Drag to orbit · Pinch to zoom · Two fingers to pan.</p>
-</main></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Systema · Shared 3D scene</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="views.css">
+  <link rel="stylesheet" href="scene.css">
+  <script type="importmap">{"imports":{"three":"./vendor/three/three.module.js"}}</script>
+  <script type="module" src="scene.js"></script>
+</head>
+<body class="scene-page">
+  <header class="topbar">
+    <a class="brand lesson-return" href="/?demo=1"><svg viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="7" r="3"/><path d="M18 13v10M9 16l9-3 9 3M18 23l-7 9m7-9 7 9"/></svg><span>SYSTEMA<span class="brand-sub">Movement lessons</span></span></a>
+    <a href="/?demo=1" class="file-button lesson-return"><svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 5-7 7 7 7m-7-7h14"/></svg>Back to lesson</a>
+  </header>
+  <main class="scene-main">
+    <section class="lesson-heading scene-heading">
+      <div><p class="eyebrow">MULTIPLE ATTACKERS · 18–30 SECONDS</p><h1>Examine the exchange</h1></div>
+      <p id="sceneStatus" class="scene-status" role="status">Loading the reconstructed scene…</p>
+    </section>
+    <section class="workspace-controls scene-view-controls" aria-label="Scene views">
+      <div class="view-presets" role="group" aria-label="Choose scene views">
+        <button data-scene-view="scene" aria-pressed="false">3D scene</button>
+        <button data-scene-view="video" aria-pressed="false">Footage</button>
+        <button data-scene-view="compare" aria-pressed="true" class="active">Compare</button>
+      </div>
+    </section>
+    <div id="sceneGrid" class="scene-grid">
+      <section id="scenePanel" class="viewer-panel" aria-label="3D movement viewer">
+        <div class="view-toolbar">
+          <strong>Shared 3D scene</strong>
+          <div class="controls" role="group" aria-label="Camera angle">
+            <button data-camera="front" aria-pressed="true" disabled>Front</button>
+            <button data-camera="side" aria-pressed="false" disabled>Side</button>
+            <button data-camera="overhead" aria-pressed="false" disabled>Overhead</button>
+            <button id="resetCamera" disabled>Reset</button>
+          </div>
+        </div>
+        <div id="orbitStage" class="orbit-stage" aria-label="Orbitable skeleton scene">
+          <p id="emptyScene">The reconstructed scene is being prepared. You can still review the source footage.</p>
+        </div>
+      </section>
+      <section id="sceneFootagePanel" class="viewer-panel" aria-label="Source footage viewer">
+        <div class="view-toolbar"><strong>Source footage</strong><span class="viewer-sync-label">Synced with 3D</span></div>
+        <div class="scene-footage-stage"><video id="sceneVideo" src="media/source-reference.mp4" playsinline preload="metadata" aria-label="Source movement footage. Use the shared playback controls below."></video></div>
+      </section>
+    </div>
+    <div id="sceneTransport" class="scene-transport" role="group" aria-label="Synchronized scene playback">
+      <button id="scenePlay" class="play-control" aria-label="Play movement" title="Play movement">
+        <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <span id="sceneTime" aria-live="off">18.000s</span>
+      <div class="scene-timeline">
+        <button id="scenePrevious" class="icon-control" aria-label="Previous frame" title="Previous frame">
+          <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14m12-14L8 12l10 7Z"/></svg>
+        </button>
+        <input id="sceneScrub" type="range" min="0" max="359" value="0" aria-label="Scene frame" aria-valuetext="18.000 source seconds">
+        <button id="sceneNext" class="icon-control" aria-label="Next frame" title="Next frame">
+          <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M6 5l10 7-10 7Z"/></svg>
+        </button>
+      </div>
+      <label class="scene-speed">Speed <select id="sceneSpeed"><option value="1">Normal</option><option value="0.5">Half</option><option value="0.25">Quarter</option></select></label>
+      <button id="sceneMute" class="icon-control" aria-label="Mute source audio" aria-pressed="false" title="Mute source audio">
+        <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4Zm4 3a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>
+      </button>
+    </div>
+    <section id="sceneDetailsPanel" class="scene-details-panel" aria-label="Scene options and estimates">
+      <div class="participant-row"><span>Show people</span><div id="scenePeople" class="participant-buttons"></div></div>
+      <details id="contactDetails" class="contact-disclosure">
+        <summary><span>Contact visualization</span><span class="contact-summary-hint">Explore estimated intersections</span></summary>
+        <section class="contact-controls" aria-label="Contact effects">
+          <div class="contact-options">
+            <label class="check"><input id="contactEffects" type="checkbox">Show contact effects</label>
+            <label>Bone thickness <select id="boneThickness" disabled><option value="0.02">Thin</option><option value="0.035">Medium</option><option value="0.05">Wide</option></select></label>
+          </div>
+          <p class="contact-help">Glowing bones and orange spots mark intersecting bones in the model. Wider bones produce more intersections. Compare the footage to interpret a strike or grab.</p>
+          <p id="contactStatus" role="status">Turn on contact effects to highlight intersecting 3D bones.</p>
+          <ul id="contactList" class="contact-list"></ul>
+        </section>
+      </details>
+      <div class="viewer-footer"><span class="estimate-mark">3D estimates</span><span id="frameQuality">Compare depth and contact with the footage.</span></div>
+      <p id="orbitHelp" class="scene-help">Drag to orbit · Scroll or pinch to zoom · Right-drag or two fingers to pan.</p>
+    </section>
+  </main>
+</body>
+</html>

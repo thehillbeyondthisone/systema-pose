@@ -29,8 +29,13 @@ Open http://127.0.0.1:8770/ and choose **Explore the sample lesson**.
 
 Use **Watch**, **Study motion**, and **Annotate** to switch workspaces. Pause at a
 moment and choose **Add annotation** to attach text to a participant,
-body part, or scene point. **Views → Explore in 3D** opens the sample's synchronized
-orbitable scene.
+body part, or scene point. **Explore in 3D**, beside the view controls, opens the
+sample's synchronized orbitable scene at the current frame.
+
+Selecting an annotation highlights its passage on the timeline. **Play passage**
+replays that range; **Play full clip** returns to unrestricted playback from the
+current frame. Selecting a note alone does not limit playback. The 3D scene and
+footage share one player for seeking, speed, frame steps, and audio.
 
 In the 3D viewer, enable **Contact effects** to draw bones with visible thickness.
 Intersecting bones glow yellow and orange spots identify their intersection

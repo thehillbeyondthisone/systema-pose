@@ -29,6 +29,8 @@ async function noOverflow(page) { assert(await page.evaluate(()=>document.docume
     await page.goto(BASE,{waitUntil:'networkidle'});
     assert.equal(await page.locator('.clip-card').count(),1);
     assert(await page.locator('.clip-preview img').evaluate(image=>image.complete&&image.naturalWidth>0));
+    assert(await page.locator('#lessonLibrary').evaluate(el=>el.classList.contains('featured')));
+    await page.getByText('Search & filter',{exact:true}).click();
     await page.locator('#clipCategory').selectOption('Sparring');
     assert.equal(await page.locator('.clip-card').count(),0);
     assert(await page.locator('#libraryStatus').isVisible());
@@ -40,7 +42,7 @@ async function noOverflow(page) { assert(await page.evaluate(()=>document.docume
     await page.locator('#clipSearch').fill('');
     await noOverflow(page);
     await page.screenshot({path:path.join(OUT,'library-desktop.png'),fullPage:true});
-    await page.getByRole('link',{name:'Open lesson →'}).click();
+    await page.getByRole('link',{name:'Open lesson: Multiple attackers',exact:true}).click();
     await page.waitForFunction(()=>document.getElementById('participants').children.length===4&&document.getElementById('video').readyState>=2);
     pass('Library search, footage categories and clip navigation work under /dist/');
     await page.locator('#scrub').evaluate(input=>{input.value='36';input.dispatchEvent(new Event('input'));});
@@ -54,6 +56,22 @@ async function noOverflow(page) { assert(await page.evaluate(()=>document.docume
     await page.locator('#saveNote').click();
     await page.waitForFunction(()=>document.getElementById('saveState').textContent==='Annotation saved');
     assert.equal(await page.locator('#detailText img').count(),0);
+    assert.equal(await page.locator('#playbackScope').innerText(),'Full clip');
+    assert(await page.locator('#selectedPassage').isVisible());
+    // Merely reading a note must not constrain playback to its passage.
+    await page.locator('#play').click();
+    await page.waitForFunction(()=>document.getElementById('video').currentTime>3.3);
+    assert.equal(await page.locator('#video').evaluate(video=>video.paused),false);
+    await page.locator('#play').click();
+    await page.locator('#replayPassage').click();
+    await page.waitForFunction(()=>{const video=document.getElementById('video');return video.paused&&video.currentTime>=3.19;});
+    assert((await page.locator('#playbackScope').innerText()).startsWith('Passage'));
+    await page.locator('#playFullClip').click();
+    await page.waitForFunction(()=>document.getElementById('video').currentTime>3.3);
+    assert.equal(await page.locator('#playbackScope').innerText(),'Full clip');
+    await page.locator('#play').click();
+    await page.locator('#jumpToNote').click();
+    pass('Selected ranges are visible; full clip and passage playback are explicit and independent');
     const stored=await page.evaluate(()=>Object.keys(localStorage).filter(key=>key.startsWith('systema-notes-v1:')));
     assert.equal(stored.length,1);
     const exportEvent=page.waitForEvent('download');await page.locator('#exportNotes').click();
@@ -79,10 +97,12 @@ async function noOverflow(page) { assert(await page.evaluate(()=>document.docume
     const other=await browser.newContext();const otherPage=await other.newPage();await load(otherPage);
     await otherPage.locator('[data-preset="annotate"]').click();assert.equal(await otherPage.locator('.note-card').count(),0);await other.close();
     pass('Personal notes stay in their browser profile');
-    await page.locator('#chooseViews').click();await page.locator('#sceneLink').click();
+    await page.locator('#sceneShortcut').click();
     await page.waitForFunction(()=>document.getElementById('sceneStatus').classList.contains('ready'));
     await page.waitForFunction(()=>document.getElementById('sceneVideo').readyState>=2);
     assert(page.url().includes('/dist/scene.html?clip=multiple-attackers&frame=36'));
+    assert.equal(await page.locator('#sceneVideo').evaluate(video=>video.controls),false);
+    if(!await page.locator('#contactDetails').evaluate(details=>details.open))await page.locator('#contactDetails summary').click();
     await page.locator('#contactEffects').check();
     assert(Number(await page.locator('#contactStatus').getAttribute('data-count'))>0);
     await page.locator('[data-camera="side"]').click();
@@ -91,7 +111,7 @@ async function noOverflow(page) { assert(await page.evaluate(()=>document.docume
     await page.getByRole('link',{name:'Back to lesson'}).click();await page.waitForFunction(()=>document.getElementById('participants').children.length===4);
     assert(page.url().includes('/dist/lesson.html?clip=multiple-attackers&frame=36'));
     pass('3D scenes, camera-independent contacts and frame-preserving return links work on static hosting');
-    for(const size of [{width:390,height:844},{width:768,height:1024}]){
+    for(const size of [{width:320,height:568},{width:390,height:844},{width:640,height:900},{width:768,height:1024}]){
       await page.setViewportSize(size);await noOverflow(page);
       await page.goto(BASE,{waitUntil:'networkidle'});await noOverflow(page);
       await page.screenshot({path:path.join(OUT,`library-${size.width}.png`),fullPage:true});

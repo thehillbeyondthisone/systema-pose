@@ -124,6 +124,7 @@ async function dialogFits(page) {
     await page.locator('#chooseViews').click();await page.locator('#sceneLink').waitFor();await page.locator('#sceneLink').click();
     await page.waitForFunction(()=>document.getElementById('sceneStatus').classList.contains('ready'));
     await page.waitForFunction(()=>Math.abs(document.getElementById('sceneVideo').currentTime-7.8)<.01);
+    if(!await page.locator('#contactDetails').evaluate(details=>details.open))await page.locator('#contactDetails summary').click();
     assert.equal(await page.locator('#contactEffects').isChecked(),false);
     await page.locator('#contactEffects').check();
     await page.locator('#sceneScrub').evaluate(input=>{input.value='36';input.dispatchEvent(new Event('input',{bubbles:true}));});
@@ -138,6 +139,7 @@ async function dialogFits(page) {
     assert.equal(await page.locator('#contactStatus').getAttribute('data-count'),'0');
     for(const input of peopleControls.slice(1))await input.check();
     await page.reload();await page.waitForFunction(()=>document.getElementById('sceneStatus').classList.contains('ready'));
+    if(!await page.locator('#contactDetails').evaluate(details=>details.open))await page.locator('#contactDetails summary').click();
     assert.equal(await page.locator('#contactEffects').isChecked(),true);
     assert.equal(await page.locator('#boneThickness').inputValue(),'0.05');
     await page.locator('#boneThickness').selectOption('0.02');

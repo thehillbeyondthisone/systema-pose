@@ -15,6 +15,7 @@ try{
 $('contactEffects').checked=contactSettings.enabled;
 $('boneThickness').value=String(contactSettings.radius);
 $('boneThickness').disabled=!contactSettings.enabled;
+$('contactDetails').open=contactSettings.enabled;
 function changeContactSettings(){
   contactSettings={enabled:$('contactEffects').checked,radius:Number($('boneThickness').value)};
   $('boneThickness').disabled=!contactSettings.enabled;
@@ -28,18 +29,35 @@ let sourceStart=18, sourceEnd=30, fps=30, frameCount=360, siteLesson=null;
 const sceneStorageKey='systema-scene-view-v1';
 let sceneView=innerWidth<=600?'scene':'compare';
 try{const saved=localStorage.getItem(sceneStorageKey);if(['scene','video','compare'].includes(saved))sceneView=saved;}catch{}
+function fitSceneViewports(){
+  const main=document.querySelector('.scene-main');
+  if(!matchMedia('(min-width:901px) and (min-height:580px)').matches){
+    main.style.removeProperty('--scene-stage-height');return;
+  }
+  const grid=$('sceneGrid');
+  const toolbarHeight=Math.max(...[...grid.querySelectorAll('.view-toolbar')]
+    .filter(toolbar=>toolbar.getClientRects().length).map(toolbar=>toolbar.getBoundingClientRect().height));
+  const available=innerHeight-(grid.getBoundingClientRect().top+scrollY)-toolbarHeight-$('sceneTransport').offsetHeight-30;
+  main.style.setProperty('--scene-stage-height',`${Math.max(200,Math.min(620,Math.floor(available)))}px`);
+}
 function applySceneView(value){
   sceneView=value;
   $('scenePanel').hidden=value==='video';$('sceneFootagePanel').hidden=value==='scene';
+  $('sceneDetailsPanel').hidden=value==='video';
+  document.querySelector('.viewer-sync-label').hidden=value!=='compare'||!motion;
   $('orbitHelp').hidden=value==='video';$('sceneGrid').classList.toggle('single-view',value!=='compare');
   document.querySelectorAll('[data-scene-view]').forEach(button=>{
     const active=button.dataset.sceneView===value;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));
   });
   try{localStorage.setItem(sceneStorageKey,value);}catch{}
+  fitSceneViewports();
 }
 document.querySelectorAll('[data-scene-view]').forEach(button=>button.addEventListener('click',()=>applySceneView(button.dataset.sceneView)));
 document.querySelectorAll('.lesson-return').forEach(link=>link.addEventListener('click',()=>{link.href=site&&siteLesson ? site.link('lesson.html',siteLesson.id,frame) : `/?demo=1&frame=${frame}`;}));
 applySceneView(sceneView);
+window.addEventListener('resize',fitSceneViewports);
+const layoutObserver=new ResizeObserver(fitSceneViewports);
+document.querySelectorAll('.scene-heading,.scene-view-controls,.scene-grid .view-toolbar,#sceneTransport').forEach(element=>layoutObserver.observe(element));
 const entryFrame=Number(new URLSearchParams(location.search).get('frame'));
 if(!site&&Number.isInteger(entryFrame)&&entryFrame>=0&&entryFrame<frameCount){
   if(video.readyState>=1)seek(entryFrame);
@@ -56,6 +74,7 @@ function sceneUnavailable(){
 function showFrame(index){
   frame=Math.max(0,Math.min(frameCount-1,index));scrub.value=frame;
   $('sceneTime').textContent=`${(sourceStart+frame/fps).toFixed(3)}s`;
+  scrub.setAttribute('aria-valuetext',`${(sourceStart+frame/fps).toFixed(3)} source seconds`);
   if(!motion)return;
   const signature=JSON.stringify([frame,contactSettings,[...objects.values()].map(object=>object.checkbox.checked)]);
   if(signature===displayedFrameSignature)return;
@@ -142,8 +161,43 @@ $('scenePlay').addEventListener('click',async()=>{
   if(!video.paused){video.pause();return;}
   try{if(video.ended)seek(0);await video.play();}catch{$('sceneStatus').textContent='Tap Play again to start the footage.';}
 });
-video.addEventListener('play',()=>{$('scenePlay').textContent='Ⅱ';$('scenePlay').setAttribute('aria-label','Pause movement');});
-video.addEventListener('pause',()=>{$('scenePlay').textContent='▶';$('scenePlay').setAttribute('aria-label','Play movement');});
+function playbackIcon(){
+  const playing=!video.paused&&!video.ended;
+  $('scenePlay').innerHTML=playing
+    ? '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke-width="3"/></svg>'
+    : '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z" fill="currentColor" stroke="none"/></svg>';
+  const label=playing?'Pause movement':'Play movement';
+  $('scenePlay').setAttribute('aria-label',label);$('scenePlay').title=label;
+}
+function audioIcon(){
+  const muted=video.muted||video.volume===0;
+  $('sceneMute').innerHTML=muted
+    ? '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4Zm5 4 6 6m0-6-6 6"/></svg>'
+    : '<svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4Zm4 3a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>';
+  const label=muted?'Unmute source audio':'Mute source audio';
+  $('sceneMute').setAttribute('aria-label',label);$('sceneMute').setAttribute('aria-pressed',String(muted));$('sceneMute').title=label;
+}
+$('sceneMute').addEventListener('click',()=>{
+  if(video.muted||video.volume===0){video.muted=false;if(video.volume===0)video.volume=1;}
+  else video.muted=true;
+});
+video.addEventListener('play',playbackIcon);
+video.addEventListener('pause',playbackIcon);
+video.addEventListener('ended',playbackIcon);
+video.addEventListener('volumechange',audioIcon);
+function showVideoError(){
+  $('sceneStatus').textContent='Source footage could not load. Reload the lesson to try again.';
+  $('sceneStatus').classList.remove('ready');
+}
+video.addEventListener('error',showVideoError);
+playbackIcon();audioIcon();
+document.addEventListener('keydown',event=>{
+  if(video.readyState<1||/INPUT|TEXTAREA|SELECT|BUTTON|A|SUMMARY/.test(document.activeElement?.tagName))return;
+  if(event.code==='Space'){event.preventDefault();$('scenePlay').click();}
+  if(event.code==='ArrowLeft'||event.code==='ArrowRight'){
+    event.preventDefault();$(event.code==='ArrowLeft'?'scenePrevious':'sceneNext').click();
+  }
+});
 function sync(){if(!video.paused)showFrame(Math.floor(video.currentTime*fps+0.001));requestAnimationFrame(sync);}sync();
 
 function preset(name){
@@ -240,7 +294,9 @@ async function load(){
     for(const button of document.querySelectorAll('[data-camera]')){button.disabled=false;button.addEventListener('click',()=>preset(button.dataset.camera));}
     $('resetCamera').disabled=false;$('resetCamera').addEventListener('click',()=>preset('front'));
     preset('front');showFrame(frame);
-    $('sceneStatus').textContent='Shared 3D estimates are ready to examine. Compare depth and contact with the original footage.';$('sceneStatus').classList.add('ready');
+    $('sceneStatus').textContent='3D estimates ready. Compare depth and contact with the footage.';$('sceneStatus').classList.add('ready');
+    if(video.error)showVideoError();
+    applySceneView(sceneView);
     function render(){orbit.update();renderer.render(world,camera);requestAnimationFrame(render);}render();
   }catch(error){motion=null;$('sceneStatus').textContent=`Scene unavailable: ${error.message}`;$('emptyScene').hidden=false;sceneUnavailable();}
 }
