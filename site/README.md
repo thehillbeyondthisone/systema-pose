@@ -28,6 +28,8 @@ loopback connections; they are excluded from the GitHub Pages build.
 
 1. **Import footage.** MP4, MOV, M4V or WebM, under 500 MB and two hours. The
    original stays in the private local data directory.
+   Select an unprocessed draft and choose **Delete draft** to remove it and its
+   uploaded copy after confirmation.
 2. **Choose passages and prepare.** Select up to 12 non-overlapping passages,
    90 seconds total. The existing worker generates 2D tracking and reports progress.
 3. **Review footage and motion.** Check participant identities and overlaps, then

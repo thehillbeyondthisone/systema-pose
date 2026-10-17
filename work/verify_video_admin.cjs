@@ -15,6 +15,18 @@ const report={checks:[],errors:[],failed:[]};const pass=text=>{report.checks.pus
  await page.locator('#adminDescription').fill('Draft details survive navigation.');await page.locator('#adminCategory').selectOption('Sparring');
  await page.reload();await page.locator('#editorContent').waitFor();assert.equal(await page.locator('#adminSlug').inputValue(),'admin-review-test');assert.equal(await page.locator('#adminDescription').inputValue(),'Draft details survive navigation.');assert.equal(await page.locator('#adminCategory').inputValue(),'Sparring');assert.equal(await page.locator('[data-field=start]').inputValue(),'0.1');assert.equal(await page.locator('[data-field=end]').inputValue(),'0.3');assert(!await page.locator('#reviewedMotion').isChecked());
  pass('Per-video draft details and passages survive refresh while sharing approvals remain unchecked');
+ const draftState=await (await fetch(BASE+'/api/admin/state')).json(),retainedDraft=draftState.lessons[0];
+ await page.locator('#adminVideo').setInputFiles(path.join(ROOT,'outputs/pilot/source-reference.mp4'));await page.locator('#importVideo').click();
+ await page.waitForFunction(()=>document.querySelectorAll('#adminLessons button').length===2);
+ const deleteState=await (await fetch(BASE+'/api/admin/state')).json(),discardDraft=deleteState.lessons.find(item=>item.id!==retainedDraft.id);
+ await page.locator('#adminTitle').fill('Disposable draft');assert(await page.locator('#deleteDraft').isVisible());
+ await page.setViewportSize({width:825,height:714});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(OUT,'admin-delete-draft.png'),fullPage:true});
+ page.once('dialog',dialog=>dialog.dismiss());await page.locator('#deleteDraft').click();assert(fs.existsSync(path.join(OUT,'private-data/lessons',discardDraft.id,'original.mp4')));assert.equal(await page.locator('#adminLessons button').count(),2);
+ page.once('dialog',dialog=>dialog.accept());await page.locator('#deleteDraft').click();await page.waitForFunction(()=>document.querySelectorAll('#adminLessons button').length===1);
+ assert(!fs.existsSync(path.join(OUT,'private-data/lessons',discardDraft.id)));assert(fs.existsSync(path.join(OUT,'private-data/lessons',retainedDraft.id,'original.mp4')));
+ assert.equal(await page.evaluate(id=>localStorage.getItem('systema-admin-draft-v1:'+id),discardDraft.id),null);assert.equal(await page.locator('#adminSlug').inputValue(),'admin-review-test');
+ await page.reload();await page.locator('#editorContent').waitFor();assert.equal(await page.locator('#adminLessons button').count(),1);assert.equal(await page.locator('#adminSlug').inputValue(),'admin-review-test');await page.setViewportSize({width:1440,height:1100});
+ pass('Draft deletion confirms first, removes only the selected uploaded copy and saved edits, preserves another draft, and survives reload');
  assert(await page.locator('#stageVideo').isDisabled());await page.locator('#prepareVideo').click();
  await page.waitForFunction(()=>['ready','failed'].includes(document.getElementById('lessonState').textContent),null,{timeout:240000});
  assert.equal(await page.locator('#lessonState').textContent(),'ready',await page.locator('#prepareStatus').textContent());
@@ -23,6 +35,10 @@ const report={checks:[],errors:[],failed:[]};const pass=text=>{report.checks.pus
  assert.equal(motion.frames.length,6);assert(motion.frames.some(frame=>frame.people.length>0));assert(await page.locator('#reviewMotion').isVisible());
  assert(fs.readFileSync(path.join(OUT,'private-data/lessons',lesson.id,'generation.log'),'utf8').includes('CPUExecutionProvider'));
  pass('A real video imports, selected passages run through the installed 2D pose worker, and review links appear only when ready');
+ assert(await page.locator('#deleteDraft').isHidden());
+ const deleteRequest=async id=>await fetch(BASE+'/api/admin/drafts/delete',{method:'POST',headers:{'Content-Type':'application/json',Origin:BASE,'X-Systema-Admin-Token':state.token},body:JSON.stringify({lessonId:id})});
+ assert.equal((await deleteRequest(lesson.id)).status,400);assert.equal((await deleteRequest('../lessons')).status,400);assert(fs.existsSync(path.join(OUT,'private-data/lessons',lesson.id,'original.mp4')));
+ pass('Prepared lessons and invalid storage paths cannot be deleted through the draft API');
  const job=async(button)=>{
   const before=await page.locator('#adminJobs li').first().getAttribute('data-job-id').catch(()=>null);await button.click();
   await page.waitForFunction(before=>{const item=document.querySelector('#adminJobs li');return item?.dataset.jobId&&item.dataset.jobId!==before&&['complete','failed'].includes(item.dataset.state);},before,{timeout:120000});

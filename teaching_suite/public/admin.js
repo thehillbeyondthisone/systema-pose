@@ -19,6 +19,7 @@ function readEditor(id){try{return JSON.parse(localStorage.getItem('systema-admi
 function controls(){
   const lesson=current(),working=state?.jobs.some(job=>job.status==='running'),locked=lesson&&['queued','processing','ready'].includes(lesson.status);
   $('prepareVideo').disabled=pending||!lesson||locked||!state?.processingAvailable;
+  $('deleteDraft').hidden=!lesson?.canDelete;$('deleteDraft').disabled=pending;
   const slug=$('adminSlug').value,ids=lesson?.segments?.map((_,index)=>lesson.segments.length===1?slug:`${slug}-${String(index+1).padStart(2,'0')}`)||[];
   $('stageVideo').disabled=pending||working||lesson?.status!=='ready'||!$('reviewedMotion').checked||state?.clips.some(clip=>ids.includes(clip.id));
   $('addPassage').disabled=!lesson||locked;for(const input of $('adminPassages').querySelectorAll('input,button'))input.disabled=locked;
@@ -42,7 +43,7 @@ function passageRow(segment){
   const remove=element('button','Remove');remove.type='button';remove.addEventListener('click',()=>{row.remove();saveEditor();});row.append(remove);$('adminPassages').append(row);
 }
 function loadEditor(){
-  const lesson=current();$('editorEmpty').hidden=Boolean(lesson);$('editorContent').hidden=!lesson;if(!lesson)return;
+  const lesson=current();$('editorEmpty').hidden=Boolean(lesson);$('editorContent').hidden=!lesson;if(!lesson){editorId=null;return;}
   if(editorId!==lesson.id){
     const draft=readEditor(lesson.id);editorId=lesson.id;$('adminTitle').value=draft.title??lesson.title;$('adminSlug').value=draft.slug??lesson.title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,64);
     $('adminDescription').value=draft.description||'';$('adminTags').value=draft.tags||'';$('adminCategory').value=['Training','Sparring','Fight'].includes(draft.category)?draft.category:'Training';$('reviewedMotion').checked=false;$('adminPreviewVideo').src=lesson.video;
@@ -120,7 +121,7 @@ function render(){
 }
 async function refresh(){
   const response=await fetch('/api/admin/state',{cache:'no-store'}),value=await response.json();if(!response.ok)throw Error(value.error||'Could not open the local admin dashboard.');
-  state=value;if(!selected&&state.lessons.length)selected=state.lessons[0].id;
+  state=value;if(!state.lessons.some(lesson=>lesson.id===selected))selected=state.lessons[0]?.id||null;
   const signature=JSON.stringify(value);if(signature!==lastState){lastState=signature;render();}
 }
 $('importForm').addEventListener('submit',event=>{event.preventDefault();action(async()=>{
@@ -137,6 +138,19 @@ $('prepareVideo').addEventListener('click',()=>action(async()=>{
   const segments=[...$('adminPassages').children].map(row=>Object.fromEntries([...row.querySelectorAll('input')].map(input=>[input.dataset.field,input.type==='number'?Number(input.value):input.value])));
   await api('prepare',{lessonId:selected,title:$('adminTitle').value,segments});message('Queued for local 2D motion preparation. Progress appears below.');
 }));
+$('deleteDraft').addEventListener('click',()=>{
+  const lesson=current();if(!lesson?.canDelete)return;
+  const title=$('adminTitle').value.trim()||lesson.title;
+  if(!window.confirm(`Delete “${title}”? This removes the draft, its saved edits and its uploaded video copy from this PC.`))return;
+  action(async()=>{
+    const video=$('adminPreviewVideo');video.pause();video.removeAttribute('src');video.load();
+    try{
+      const result=await api('drafts/delete',{lessonId:lesson.id});
+      try{localStorage.removeItem('systema-admin-draft-v1:'+lesson.id);}catch{}
+      selected=null;editorId=null;message(result.message);
+    }catch(error){video.src=lesson.video;throw error;}
+  });
+});
 $('addPassage').addEventListener('click',()=>{const rows=[...$('adminPassages').children];if(rows.length>=12){message('Choose up to 12 passages.',true);return;}const start=rows.length?Number(rows.at(-1).querySelector('[data-field=end]').value):0;passageRow({start,end:Math.min(start+10,current().sourceEnd),label:''});saveEditor();});
 for(const [id,field] of [['markStart','start'],['markEnd','end']])$(id).addEventListener('click',()=>{if(['queued','processing','ready'].includes(current()?.status))return;const row=$('adminPassages').children[activePassage]||$('adminPassages').firstElementChild;if(row){row.querySelector(`[data-field=${field}]`).value=$('adminPreviewVideo').currentTime.toFixed(3);saveEditor();}});
 for(const id of ['adminTitle','adminSlug','adminDescription','adminTags','adminCategory','adminPassages'])for(const event of ['input','change'])$(id).addEventListener(event,saveEditor);

@@ -242,8 +242,10 @@ class Handler(SimpleHTTPRequestHandler):
                 if not 0<size<=limit:raise ValueError('Admin request is empty or too large.')
                 raw=json.loads(self.rfile.read(size))
                 if path=='/api/admin/prepare':
-                    onboarding.draft(raw['lessonId'],raw,now())
-                    return self.send_json(onboarding.generate(raw['lessonId']))
+                    with admin.LOCK:
+                        onboarding.draft(raw['lessonId'],raw,now())
+                        return self.send_json(onboarding.generate(raw['lessonId']))
+                if path=='/api/admin/drafts/delete':return self.send_json(admin.delete_draft(raw['lessonId']))
                 if path=='/api/admin/stage':return self.send_json(admin.stage(raw),202)
                 if path=='/api/admin/unstage':return self.send_json(admin.unstage(raw['clipId']))
                 if path=='/api/admin/preview':return self.send_json(admin.build_preview(),202)

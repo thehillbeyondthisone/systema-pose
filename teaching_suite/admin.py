@@ -77,12 +77,27 @@ def save_state(value):
     onboarding.save(DATA / 'state.json', value)
 
 
+def delete_draft(lesson_id):
+    with LOCK:
+        lesson = onboarding.read(lesson_id)
+        if lesson.get('adminPrivate') is not True or lesson['status'] != 'draft' or lesson_id in onboarding.ACTIVE:
+            raise ValueError('Only an unprocessed draft from this dashboard can be deleted.')
+        source = onboarding.folder(lesson_id)
+        target = source.resolve()
+        parent = onboarding.LESSONS.resolve()
+        if source.is_symlink() or target.parent != parent or target.name != lesson_id:
+            raise ValueError('Invalid draft storage location.')
+        shutil.rmtree(target)
+        return {'message': 'Draft and its uploaded video copy deleted.', 'lessonId': lesson_id}
+
+
 def state():
     with LOCK:
         record = saved()
         entries = catalog()['lessons']
         runtime = reconstruction.runtime_state(sys.modules[__name__])
-        lessons = [{key: lesson.get(key) for key in ('id', 'title', 'status', 'message', 'progress', 'segments', 'sourceEnd', 'video', 'people')}
+        lessons = [{**{key: lesson.get(key) for key in ('id', 'title', 'status', 'message', 'progress', 'segments', 'sourceEnd', 'video', 'people')},
+                    'canDelete': lesson.get('adminPrivate') is True and lesson['status'] == 'draft' and lesson['id'] not in onboarding.ACTIVE}
                    for lesson in onboarding.library()]
         return {'token': TOKEN, 'lessons': lessons, 'clips': entries, 'staged': record['staged'],
                 'preview': record.get('preview'), 'jobs': [dict(value) for value in list(JOBS.values())[-10:]],
