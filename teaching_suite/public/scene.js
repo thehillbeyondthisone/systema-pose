@@ -4,10 +4,17 @@ import {findBoneContacts} from './contact_geometry.mjs';
 import {StudioEnvironment} from './studio-environment.js';
 import {FigureRig} from './figure-rig.js';
 import {StrikeCues} from './strike-cues.js';
+import {ModelLibrary} from './model-library.js';
 let studioEnvironment=null;
+let modelLibrary=null, modelsRestoring=true;
+let refreshFigureChoices=()=>{};
 let strikeCues=null, teachingPreviewEnd=null, figureStorageKey='';
 const figureStyles={skeleton:'Line skeleton',bones:'Solid skeleton',mannequin:'Rigged mannequin',dummy:'Training dummy'};
 let figureSettings={defaultStyle:'mannequin',participants:{}};
+const isModelStyle=value=>typeof value==='string'&&/^model:[a-zA-Z0-9_-]{1,100}$/.test(value);
+const validStyle=value=>Object.hasOwn(figureStyles,value)||isModelStyle(value);
+const selectedStyle=id=>figureSettings.participants[String(id)]||figureSettings.defaultStyle;
+function effectiveStyle(id){const value=selectedStyle(id);return isModelStyle(value)&&!modelLibrary?.hasReady(value.slice(6))?'mannequin':value;}
 
 const $=id=>document.getElementById(id), video=$('sceneVideo'), scrub=$('sceneScrub');
 const palette=['#ffc45f','#7bc7ed','#bda4ee','#94d8b8','#f29d91','#dfc688'];
@@ -157,18 +164,40 @@ function showFrame(index){
     object.joints.geometry.attributes.position.array.set(person.xyz.flat());
     object.joints.geometry.attributes.position.needsUpdate=true;
     object.joints.geometry.computeBoundingSphere();
-    const style=figureSettings.participants[String(person.id)]||figureSettings.defaultStyle;
-    const rigged=style==='mannequin'||style==='dummy';
+    let style=effectiveStyle(person.id);
+    const customId=isModelStyle(style)?style.slice(6):null;
+    let customRig=null;
+    for(const rig of object.customRigs.values())rig.group.visible=false;
+    if(customId){
+      try{
+        if(!object.customRigs.has(customId)){
+          const rig=modelLibrary.get(customId).createInstance({jointNames:motion.jointNames,edges:motion.edges,color:object.color});
+          object.customRigs.set(customId,rig);object.group.add(rig.group);
+        }
+        customRig=object.customRigs.get(customId);
+      }catch(error){
+        figureSettings.participants[String(person.id)]='mannequin';style='mannequin';
+        modelLibrary.setStatus(`This model could not be animated: ${error.message}`,true);
+        queueMicrotask(()=>refreshFigureChoices());
+      }
+    }
+    const builtinRig=style==='mannequin'||style==='dummy';
+    const rigged=builtinRig||Boolean(customRig);
     object.activeRigged=rigged;
     const solidVisible=!rigged&&(style==='bones'||contactSettings.enabled);
     object.bones.visible=!rigged&&!solidVisible;object.joints.visible=!rigged&&!solidVisible;
     object.solid.visible=solidVisible||contactSettings.enabled;
     const radius=contactSettings.enabled?contactSettings.radius:.014;
-    object.rig.group.visible=rigged;
-    if(rigged){
+    object.rig.group.visible=builtinRig;
+    const highlight=strikeCues?.getHighlight(person.id);
+    if(builtinRig){
       object.rig.setStyle(style);
-      const highlight=strikeCues?.getHighlight(person.id);
       object.rig.update(person.xyz,{color:object.color,opacity,xray,highlightJoint:highlight?.joint,intensity:(highlight?.intensity||0)/5});
+    }
+    if(customRig){
+      customRig.group.visible=true;
+      customRig.update(person.xyz,{opacity,xray,highlightJoint:highlight?.joint,intensity:(highlight?.intensity||0)/5});
+      object.customUpdates.set(customId,(object.customUpdates.get(customId)||0)+1);
     }
     object.bones.material.depthTest=!xray;object.joints.material.depthTest=!xray;
     object.bones.renderOrder=xray?1000:0;object.joints.renderOrder=xray?1000:0;
@@ -196,8 +225,11 @@ function showFrame(index){
   const overlap=people.some(p=>p.overlappingSourceBoxes?.length);
   $('frameQuality').textContent=gaps?`${gaps} pose${gaps===1?'':'s'} uses an interpolated tracking box. Faded poses need source review; contact is unverified.`:overlap?'People overlap in the footage. Faded poses may follow the wrong limbs; contact is unverified.':'Depth and contact are estimates. Compare the poses with the footage.';
   showContacts();
-  renderer.domElement.dataset.figureStyles=JSON.stringify(Object.fromEntries([...objects.keys()].map(id=>[id,figureSettings.participants[id]||figureSettings.defaultStyle])));
-  renderer.domElement.dataset.rigCount=String([...objects].filter(([id,object])=>object.group.visible&&['mannequin','dummy'].includes(figureSettings.participants[id]||figureSettings.defaultStyle)).length);
+  renderer.domElement.dataset.figureStyles=JSON.stringify(Object.fromEntries([...objects.keys()].map(id=>[id,effectiveStyle(id)])));
+  renderer.domElement.dataset.rigCount=String([...objects].filter(([id,object])=>object.group.visible&&(['mannequin','dummy'].includes(effectiveStyle(id))||isModelStyle(effectiveStyle(id)))).length);
+  const customUpdates=Object.fromEntries([...objects].filter(([id,object])=>object.group.visible&&isModelStyle(effectiveStyle(id))).map(([id,object])=>[id,{modelId:effectiveStyle(id).slice(6),lastUpdate:object.customUpdates.get(effectiveStyle(id).slice(6))||0}]));
+  renderer.domElement.dataset.customModelCount=String(Object.keys(customUpdates).length);
+  renderer.domElement.dataset.customModelUpdates=JSON.stringify(customUpdates);
   renderer.domElement.dataset.strikeCueCount=String(strikeCues?.group.children.filter(child=>child.visible).length||0);
 }
 function showContacts(){
@@ -351,8 +383,8 @@ async function load(){
     figureStorageKey=`systema-figures-v1:${data.sourceSha256}`;
     try{
       const saved=JSON.parse(localStorage.getItem(figureStorageKey));
-      if(saved&&Object.hasOwn(figureStyles,saved.defaultStyle)&&saved.participants&&typeof saved.participants==='object'){
-        figureSettings={defaultStyle:saved.defaultStyle,participants:Object.fromEntries(Object.entries(saved.participants).filter(([id,style])=>data.people.some(person=>String(person.id)===id)&&Object.hasOwn(figureStyles,style)))};
+      if(saved&&validStyle(saved.defaultStyle)&&saved.participants&&typeof saved.participants==='object'){
+        figureSettings={defaultStyle:saved.defaultStyle,participants:Object.fromEntries(Object.entries(saved.participants).filter(([id,style])=>data.people.some(person=>String(person.id)===id)&&validStyle(style)))};
       }
     }catch{}
     const stage=$('orbitStage');world=new THREE.Scene();world.background=new THREE.Color('#142234');
@@ -389,13 +421,13 @@ async function load(){
       label.className='check';label.style.setProperty('--participant-color',color);
       const key=document.createElement('span');key.className='participant-key';key.setAttribute('aria-hidden','true');
       label.append(checkbox,key,document.createTextNode(person.name));$('scenePeople').append(label);
-      checkbox.addEventListener('change',()=>showFrame(frame));objects.set(String(person.id),{group,bones,joints,checkbox,solid,solidBones,solidJoints,color,rig});
+      checkbox.addEventListener('change',()=>showFrame(frame));objects.set(String(person.id),{group,bones,joints,checkbox,solid,solidBones,solidJoints,color,rig,customRigs:new Map(),customUpdates:new Map()});
       const styleLabel=document.createElement('label'),select=document.createElement('select');
       styleLabel.className='figure-person';styleLabel.style.setProperty('--participant-color',color);
       const name=document.createElement('span');name.textContent=person.name;
       select.id=`figure-style-${person.id}`;select.setAttribute('aria-label',`Figure style for ${person.name}`);
       for(const [value,title] of Object.entries(figureStyles))select.add(new Option(title,value));
-      select.value=figureSettings.participants[String(person.id)]||figureSettings.defaultStyle;
+      select.value=effectiveStyle(person.id);
       select.addEventListener('change',()=>{figureSettings.participants[String(person.id)]=select.value;updateFigureStyles();});
       styleLabel.append(name,select);$('figurePeople').append(styleLabel);
     }
@@ -405,6 +437,38 @@ async function load(){
       try{localStorage.setItem(figureStorageKey,JSON.stringify(figureSettings));}catch{}
       displayedFrameSignature='';showFrame(frame);
     }
+    function refreshModelChoices(event={}){
+      if(event.id&&['remove','mapping','settings'].includes(event.type)){
+        for(const object of objects.values()){
+          object.customRigs.get(event.id)?.dispose();object.customRigs.delete(event.id);object.customUpdates.delete(event.id);
+        }
+      }
+      for(const key of Object.keys(figureStyles))if(isModelStyle(key))delete figureStyles[key];
+      for(const [id,asset] of modelLibrary.assets)if(modelLibrary.hasReady(id))figureStyles['model:'+id]=asset.name;
+      if(!modelsRestoring){
+        if(!Object.hasOwn(figureStyles,figureSettings.defaultStyle))figureSettings.defaultStyle='mannequin';
+        for(const [id,style] of Object.entries(figureSettings.participants))if(!Object.hasOwn(figureStyles,style))figureSettings.participants[id]='mannequin';
+      }
+      for(const [id] of objects){
+        const select=$(`figure-style-${id}`);select.replaceChildren();
+        for(const [value,title] of Object.entries(figureStyles))select.add(new Option(title,value));
+        select.value=effectiveStyle(id);
+      }
+      const all=$('figureStyle');all.replaceChildren();
+      for(const [value,title] of Object.entries(figureStyles))all.add(new Option(title,value));
+      const mixed=new Option('Individual styles','mixed');mixed.disabled=true;all.add(mixed);
+      updateFigureStyles();
+    }
+    refreshFigureChoices=refreshModelChoices;
+    modelLibrary=new ModelLibrary({container:$('modelLibrary'),motion,
+      onChange:event=>refreshModelChoices(event),
+      onApply:(id,participantId)=>{
+        if(!modelLibrary.hasReady(id))return;
+        if(participantId!=null&&participantId!=='all')figureSettings.participants[String(participantId)]='model:'+id;
+        else figureSettings={defaultStyle:'model:'+id,participants:{}};
+        refreshModelChoices();
+        return participantId!=null&&participantId!=='all'?effectiveStyle(participantId)==='model:'+id:[...objects.keys()].every(personId=>effectiveStyle(personId)==='model:'+id);
+      }});
     $('figureStyle').disabled=false;
     $('figureStyle').addEventListener('change',()=>{
       figureSettings={defaultStyle:$('figureStyle').value,participants:{}};
@@ -436,6 +500,7 @@ async function load(){
       $('studioStatus').textContent='This lesson has no registered studio scan.';
       $('studioRetry').hidden=true;
     }
+    modelLibrary.restore().catch(error=>modelLibrary.setStatus(`Saved models could not be restored: ${error.message}`,true)).finally(()=>{modelsRestoring=false;refreshModelChoices();});
   }catch(error){motion=null;$('sceneStatus').textContent=`Scene unavailable: ${error.message}`;$('emptyScene').hidden=false;sceneUnavailable();}
 }
 load();
