@@ -19,6 +19,7 @@ const report={checks:[],errors:[],failed:[]};const pass=text=>{report.checks.pus
  await page.locator('#adminVideo').setInputFiles(path.join(ROOT,'outputs/pilot/source-reference.mp4'));await page.locator('#importVideo').click();
  await page.waitForFunction(()=>document.querySelectorAll('#adminLessons button').length===2);
  const deleteState=await (await fetch(BASE+'/api/admin/state')).json(),discardDraft=deleteState.lessons.find(item=>item.id!==retainedDraft.id);
+ const legacyDraftFile=path.join(OUT,'private-data/lessons',discardDraft.id,'lesson.json'),legacyDraft=JSON.parse(fs.readFileSync(legacyDraftFile));delete legacyDraft.adminPrivate;fs.writeFileSync(legacyDraftFile,JSON.stringify(legacyDraft));
  await page.locator('#adminTitle').fill('Disposable draft');assert(await page.locator('#deleteDraft').isVisible());
  await page.setViewportSize({width:825,height:714});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(OUT,'admin-delete-draft.png'),fullPage:true});
  page.once('dialog',dialog=>dialog.dismiss());await page.locator('#deleteDraft').click();assert(fs.existsSync(path.join(OUT,'private-data/lessons',discardDraft.id,'original.mp4')));assert.equal(await page.locator('#adminLessons button').count(),2);
@@ -26,7 +27,7 @@ const report={checks:[],errors:[],failed:[]};const pass=text=>{report.checks.pus
  assert(!fs.existsSync(path.join(OUT,'private-data/lessons',discardDraft.id)));assert(fs.existsSync(path.join(OUT,'private-data/lessons',retainedDraft.id,'original.mp4')));
  assert.equal(await page.evaluate(id=>localStorage.getItem('systema-admin-draft-v1:'+id),discardDraft.id),null);assert.equal(await page.locator('#adminSlug').inputValue(),'admin-review-test');
  await page.reload();await page.locator('#editorContent').waitFor();assert.equal(await page.locator('#adminLessons button').count(),1);assert.equal(await page.locator('#adminSlug').inputValue(),'admin-review-test');await page.setViewportSize({width:1440,height:1100});
- pass('Draft deletion confirms first, removes only the selected uploaded copy and saved edits, preserves another draft, and survives reload');
+ pass('Draft deletion supports older draft formats, confirms first, removes only the selected uploaded copy and saved edits, preserves another draft, and survives reload');
  assert(await page.locator('#stageVideo').isDisabled());await page.locator('#prepareVideo').click();
  await page.waitForFunction(()=>['ready','failed'].includes(document.getElementById('lessonState').textContent),null,{timeout:240000});
  assert.equal(await page.locator('#lessonState').textContent(),'ready',await page.locator('#prepareStatus').textContent());
