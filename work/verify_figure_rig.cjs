@@ -36,6 +36,18 @@ const server=http.createServer((request,response)=>{
       check(rig.group.children.filter(object=>object.isMesh).length===1,'Visible character must be one merged skin');
       const weights=rig.geometry.attributes.skinWeight;
       for(let vertex=0;vertex<weights.count;vertex++)check(Math.abs(weights.getX(vertex)+weights.getY(vertex)+weights.getZ(vertex)+weights.getW(vertex)-1)<1e-6,'Skin weights normalized');
+      const skin=rig.geometry.attributes.skinIndex,blended={};
+      for(const joint of [4,5,16,17,18,19]){
+        const count=Array.from({length:weights.count},(_,i)=>i).filter(i=>rig.vertexKinds[i]==='body'&&weights.getY(i)>.05&&weights.getY(i)<.95&&skin.getY(i)===joint).length;
+        check(count>=16,`Joint ${joint} needs a deforming band spanning both adjacent bones`);blended[joint]=count;
+      }
+      // Each arm/leg is one indexed surface instead of independent cylinders
+      // meeting at floating spheres. Check actual triangle connectivity.
+      const parent=Array.from({length:weights.count},(_,i)=>i),find=i=>parent[i]===i?i:(parent[i]=find(parent[i]));
+      const triangles=rig.geometry.index.array;
+      for(let i=0;i<triangles.length;i+=3){const a=triangles[i],b=triangles[i+1],c=triangles[i+2];if(rig.vertexKinds[a]==='body'&&rig.vertexKinds[b]==='body'&&rig.vertexKinds[c]==='body'){parent[find(b)]=find(a);parent[find(c)]=find(a);}}
+      const components=new Map();for(let i=0;i<parent.length;i++)if(rig.vertexKinds[i]==='body'){const key=find(i);components.set(key,(components.get(key)||0)+1);}
+      check([...components.values()].filter(count=>count>100).length===4,'Four connected limb skins must span shoulders/elbows and hips/knees');
       const point=new THREE.Vector3();let maxJointError=0,updates=0;
       for(const frame of motion.frames)for(const person of frame.people){
         check(rig.update(person.xyz),'Valid reconstruction frame must update');updates++;
@@ -79,7 +91,7 @@ const server=http.createServer((request,response)=>{
       const camera=new THREE.PerspectiveCamera(36,1280/900,.01,50);camera.position.set(2.6,2.4,5);camera.lookAt(0,.95,0);
       renderer.render(world,camera);check(renderer.info.render.triangles>1000,'Actual GPU draw must include visible skinned geometry');
       window.rigTest={world,renderer,display,rig};
-      return {boneCount:22,vertices:geometry.attributes.position.count,triangles:geometry.index.count/3,poseUpdates:updates,maxJointError,drawTriangles:renderer.info.render.triangles};
+      return {boneCount:22,vertices:geometry.attributes.position.count,triangles:geometry.index.count/3,blended,poseUpdates:updates,maxJointError,drawTriangles:renderer.info.render.triangles};
     });
     assert.deepEqual(errors,[]);console.log(JSON.stringify(result,null,2));
     const screenshot=path.join(os.tmpdir(),'systema-figure-rig.png');await page.screenshot({path:screenshot});console.log('Screenshot '+screenshot);

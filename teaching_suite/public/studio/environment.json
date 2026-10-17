@@ -14,6 +14,13 @@
     "roll": -15.739813285594655,
     "scale": 1.046702867673249
   },
+  "navigation": {
+    "coordinateSpace": "scan-local",
+    "method": "Conservative interior of the main training floor from the scan's wall lines; the side recess is excluded. Approximate, not physically measured.",
+    "rotationDegrees": 35,
+    "min": [-3.68, -4.66, -1.54],
+    "max": [3.96, -0.68, 0.55]
+  },
   "lighting": {
     "method": "Three compact ceiling fixtures located in the new scan. Exposure, power and bounce remain visual estimates.",
     "coordinateSpace": "scan-local",

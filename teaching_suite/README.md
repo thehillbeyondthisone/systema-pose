@@ -18,6 +18,22 @@ There is one student interface. Existing class links also open this workspace an
 
 When available, **Explore in 3D** appears beside the view controls and inside Views. The 3D workspace offers **3D scene**, **Footage**, and **Compare**, plus Front, Side and Overhead camera angles. One shared player controls both views, including source audio, and stays above secondary scene settings. It remembers the selected layout and keeps playback available when footage is hidden. Opening the scene and returning to the lesson preserves the current source frame.
 
+Dragging from **Source camera** switches to an orbit centered on the visible
+participants; the pivot follows them during playback. A click alone keeps the
+source camera active. **Reset** restores the exact footage camera. The sample
+studio has an approximate inset boundary around its main training floor, which
+limits orbiting, panning and zooming while the studio is shown. **Overhead** can
+rise above the ceiling and opens a soft cutaway through foreground walls and
+the roof, keeping the floor and far walls visible. Source-camera mode shows the
+original scan. Other room scans need their own `navigation` boundary in the
+environment configuration; without one, the viewer uses a floor and bounded
+zoom. Boundaries follow changes to studio alignment.
+
+The rigged mannequin and training dummy use continuous limb surfaces with skin
+weights blended across shoulders, elbows, hips and knees. The 22 reconstructed
+joint positions remain unchanged; appearance changes do not refine the captured
+motion. Uploaded characters retain their own meshes and skin weights.
+
 Selecting an annotation highlights its passage on the timeline and seeks to its beginning. Main playback remains the full clip until you choose **Play passage** or **Loop passage**. The player labels passage mode and offers **Play full clip** to continue from the current frame. Scrubbing or stepping frames returns to full-clip mode.
 
 Personal annotations are saved on the lesson server under `teaching_suite/data/students/<browser-id>/`. A persistent, HttpOnly browser cookie identifies each browser. Separate browsers have separate annotation collections, including on the same lesson. Use the same browser and server address to return to your annotations. Clearing the cookie, using a private window, changing devices or changing the server hostname creates a different identity. This prototype does not have student accounts or cross-device sign-in. Text annotation works over HTTP on the local network. Recording, audio attachments, and audio playback are removed; older files remain on disk. An older annotation without text can be edited to add an explanation.
@@ -72,6 +88,17 @@ py -3 teaching_suite/manage_requests.py status REQUEST_ID declined
 A request can only be marked ready when its linked lesson is ready. The processing command retains failure logs and leaves a failed request awaiting review so it can be retried. Preparation files are saved under `teaching_suite/data/lessons/<id>/`. New videos use automatic spatial tracking: person numbers can change between passages or after overlaps. Compare motion estimates against source footage.
 
 ## Verification
+
+`work/verify_camera_deformation.cjs` checks source-camera fidelity, mouse orbit
+and zoom, 444 room-boundary sweep positions, panning, changed room alignment,
+overhead cutaways, playback, participant visibility and phone/tablet layouts.
+GPU pixel readback verifies that cutaways remove foreground splats while
+preserving the floor and far wall. Build its default preview first with
+`work/build_pages.py --output work/release-camera-deformation-20261017`, or set
+`SYSTEMA_TEST_URL` to an existing static build. `work/verify_figure_rig.cjs`
+checks connected limb surfaces and blended joint weights, then verifies all
+1,389 available sample poses for exact tracked-joint placement, valid skinning,
+deterministic seeking and rendering.
 
 `work/test_dashboard_reconstruction.py` verifies GPU pause, requirements checks,
 failure recovery and exact-scene review gates without GPU execution.

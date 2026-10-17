@@ -13,7 +13,7 @@ import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / 'teaching_suite' / 'public'
-ASSETS = ('custom-figure.js', 'model-library.js', 'figure-rig.js', 'contact-shadows.js', 'strike-cues.js', 'strike-estimates.mjs', 'strike-placement.js', 'studio-environment.js', 'studio-lighting.js', 'studio-registration.mjs', 'app.js', 'style.css', 'annotations.css', 'views.css', 'scene.js',
+ASSETS = ('custom-figure.js', 'model-library.js', 'figure-rig.js', 'scene-navigation.js', 'contact-shadows.js', 'strike-cues.js', 'strike-estimates.mjs', 'strike-placement.js', 'studio-environment.js', 'studio-lighting.js', 'studio-registration.mjs', 'app.js', 'style.css', 'annotations.css', 'views.css', 'scene.js',
           'scene.css', 'contact_geometry.mjs', 'site-data.js', 'library.js', 'library.css')
 
 

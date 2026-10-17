@@ -128,11 +128,60 @@ export class FigureRig {
       const geometry=new THREE.CylinderGeometry(radiusB,radiusA,length,12,5,false);
       append(geometry,a,'body',a,new THREE.Matrix4().makeTranslation(0,length/2,0));
     };
+    const limbSurface=(names,radii)=>{
+      const joints=names.map(name=>this.indices.get(name));
+      if(joints.some(index=>index==null))return;
+      const distances=[0],sides=16,first=positions.length/3;
+      for(let i=1;i<joints.length;i++)distances.push(distances[i-1]+this.rest[joints[i]].distanceTo(this.rest[joints[i-1]]));
+      let ring=0;
+      for(let segment=0;segment<joints.length-1;segment++){
+        const a=joints[segment],b=joints[segment+1],length=distances[segment+1]-distances[segment];
+        const steps=Math.max(4,Math.ceil(length/.035));
+        for(let step=segment?1:0;step<=steps;step++,ring++){
+          const t=step/steps,distance=distances[segment]+length*t;
+          const center=this.rest[a].clone().lerp(this.rest[b],t);
+          const tangent=this.rest[b].clone().sub(this.rest[a]).normalize();
+          let low=a,high=a,blend=0,region=t<.5?a:b;
+          // Blend on both sides of each articulation. Adjacent segments share
+          // the same ring, so elbows and knees bend as one connected surface.
+          for(let joint=1;joint<joints.length-1;joint++){
+            const width=Math.min(.09,(distances[joint]-distances[joint-1])*.3,(distances[joint+1]-distances[joint])*.3);
+            if(Math.abs(distance-distances[joint])>width)continue;
+            const u=clamp((distance-distances[joint]+width)/(2*width),0,1);
+            blend=u*u*(3-2*u);low=joints[joint-1];high=joints[joint];region=high;
+            tangent.subVectors(this.rest[joints[joint]],this.rest[joints[joint-1]]).normalize()
+              .lerp(this.rest[joints[joint+1]].clone().sub(this.rest[joints[joint]]).normalize(),blend).normalize();
+          }
+          const rotation=axialQuaternion(tangent,FORWARD,new THREE.Vector3(1,0,0),new THREE.Quaternion());
+          const radius=THREE.MathUtils.lerp(radii[segment],radii[segment+1],t*t*(3-2*t));
+          for(let side=0;side<sides;side++){
+            const angle=side/sides*Math.PI*2;
+            point.set(Math.cos(angle)*radius,0,Math.sin(angle)*radius*.92).applyQuaternion(rotation).add(center);
+            positions.push(point.x,point.y,point.z);normals.push(0,0,0);
+            skinIndices.push(low,high,0,0);skinWeights.push(1-blend,blend,0,0);
+            this.vertexRegions.push(region);this.vertexKinds.push(segment===0&&names[0]==='pelvis'?'torso':'body');
+            if(ring){
+              const current=first+ring*sides+side,previous=current-sides,next=first+ring*sides+(side+1)%sides;
+              indices.push(previous,current,previous-side+(side+1)%sides,current,next,previous-side+(side+1)%sides);
+            }
+          }
+        }
+      }
+      // Caps sit inside the torso, hands and shoes; no visible floating ends.
+      for(const [end,joint] of [[0,joints[0]],[ring-1,joints[joints.length-1]]]){
+        const vertex=positions.length/3;positions.push(...this.rest[joint].toArray());normals.push(0,0,0);
+        skinIndices.push(joint,0,0,0);skinWeights.push(1,0,0,0);this.vertexRegions.push(joint);this.vertexKinds.push(end===0&&names[0]==='pelvis'?'torso':'body');
+        for(let side=0;side<sides;side++){
+          const a=first+end*sides+side,b=first+end*sides+(side+1)%sides;
+          indices.push(vertex,...(end===0?[a,b]:[b,a]));
+        }
+      }
+    };
 
     // One continuous torso surface, with ring weights on the pelvis and spine.
     // This is the deforming part of the mesh, including shoulder/chest contour.
     const rings=[
-      [.87,.075,.055,'pelvis'],[.90,.11,.075,'pelvis'],[.935,.125,.077,'pelvis'],[.99,.143,.088,'pelvis'],
+      [.87,.105,.068,'pelvis'],[.90,.145,.085,'pelvis'],[.935,.15,.088,'pelvis'],[.99,.143,.088,'pelvis'],
       [1.045,.14,.089,'spine1'],[1.10,.135,.087,'spine1'],[1.165,.145,.095,'spine2'],
       [1.23,.154,.101,'spine2'],[1.27,.17,.104,'spine2'],[1.31,.18,.104,'spine3'],
       [1.355,.19,.102,'spine3'],[1.40,.19,.096,'spine3'],[1.43,.12,.078,'neck'],
@@ -145,33 +194,25 @@ export class FigureRig {
       const next=spine.findIndex(name=>this.rest[this.indices.get(name)].y>=height);
       const high=this.indices.get(spine[next<0?spine.length-1:next]),low=this.indices.get(spine[Math.max(0,next<0?spine.length-1:next-1)]);
       const span=this.rest[high].y-this.rest[low].y,blend=span>EPS?clamp((height-this.rest[low].y)/span,0,1):0;
-      for(let side=0;side<=sides;side++){
+      for(let side=0;side<sides;side++){
         const angle=side/sides*Math.PI*2;
         positions.push(Math.cos(angle)*width,height,Math.sin(angle)*depth);
         normal.set(Math.cos(angle)/width,0,Math.sin(angle)/depth).normalize();normals.push(normal.x,normal.y,normal.z);
         skinIndices.push(low,high,0,0);skinWeights.push(1-blend,blend,0,0);
         this.vertexRegions.push(bone);this.vertexKinds.push('torso');
-        if(ring<rings.length-1&&side<sides){
-          const a=ringStart+ring*(sides+1)+side,b=a+sides+1;
-          indices.push(a,b,a+1,b,b+1,a+1);
+        if(ring<rings.length-1){
+          const a=ringStart+ring*sides+side,b=a+sides,next=ringStart+ring*sides+(side+1)%sides;
+          indices.push(a,b,next,b,next+sides,next);
         }
       }
     }
     const bottomCenter=positions.length/3,pelvis=this.indices.get('pelvis')??0;
     positions.push(0,rings[0][0],0);normals.push(0,-1,0);skinIndices.push(pelvis,0,0,0);skinWeights.push(1,0,0,0);
     this.vertexRegions.push(pelvis);this.vertexKinds.push('torso');
-    for(let side=0;side<sides;side++)indices.push(bottomCenter,ringStart+side,ringStart+side+1);
+    for(let side=0;side<sides;side++)indices.push(bottomCenter,ringStart+side,ringStart+(side+1)%sides);
     for(const side of ['left','right']){
-      limb(`${side}_hip`,`${side}_knee`,.075,.053);
-      limb(`${side}_knee`,`${side}_ankle`,.051,.032);
-      limb(`${side}_collar`,`${side}_shoulder`,.046,.06);
-      limb(`${side}_shoulder`,`${side}_elbow`,.059,.039);
-      limb(`${side}_elbow`,`${side}_wrist`,.043,.025);
-      ellipsoid(`${side}_hip`,[.081,.081,.081],[0,0,0],'joint');
-      ellipsoid(`${side}_shoulder`,[.067,.067,.067],[0,0,0],'joint');
-      ellipsoid(`${side}_elbow`,[.047,.047,.047],[0,0,0],'joint');
-      ellipsoid(`${side}_knee`,[.059,.059,.059],[0,0,0],'joint');
-      ellipsoid(`${side}_ankle`,[.04,.042,.04],[0,0,0],'joint');
+      limbSurface(['pelvis',`${side}_hip`,`${side}_knee`,`${side}_ankle`],[.03,.077,.055,.033]);
+      limbSurface([`${side}_collar`,`${side}_shoulder`,`${side}_elbow`,`${side}_wrist`],[.047,.064,.044,.027]);
       ellipsoid(`${side}_wrist`,[.036,.067,.025],[0,.045,0],'hand');
       // The tracked foot joint is at the toe, so weight the shoe to the ankle
       // and span that entire segment. A sphere at the toe alone leaves a gap.
@@ -191,7 +232,7 @@ export class FigureRig {
     geometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(skinIndices,4));
     geometry.setAttribute('skinWeight',new THREE.Float32BufferAttribute(skinWeights,4));
     geometry.setAttribute('color',new THREE.Float32BufferAttribute(new Float32Array(positions.length),3).setUsage(THREE.DynamicDrawUsage));
-    geometry.setIndex(indices);geometry.computeBoundingSphere();
+    geometry.setIndex(indices);geometry.computeVertexNormals();geometry.computeBoundingSphere();
     return geometry;
   }
 

@@ -8,6 +8,7 @@ import {StrikeCues,strikeConfidenceLabel} from './strike-cues.js';
 import {resolveStrikeLanding} from './strike-placement.js';
 import {ModelLibrary} from './model-library.js';
 import {ContactShadows} from './contact-shadows.js';
+import {SceneNavigation} from './scene-navigation.js';
 let studioEnvironment=null;
 let studioLighting=null;
 let contactShadows=null;
@@ -41,11 +42,14 @@ let motion=null, frame=0, renderer, world, camera, orbit, objects=new Map(), cen
 let contactMarkers, markerPool=[], contactSettings={enabled:false,radius:0.02};
 let displayedFrameSignature='';
 let sourceFollowing=false;
+let navigation=null,applyingCameraPreset=false;
+const visibleSubjects=()=>motion.frames[frame].people.filter(person=>objects.get(String(person.id))?.checkbox.checked);
 // Keep normal depth testing within the characters. Drawing the foreground in
 // a second pass lets it show through the room without turning overlapping body
 // surfaces into a camera-dependent stack of transparent meshes.
 function renderSceneFrame(){
   studioLighting?.sync(studioEnvironment);
+  studioEnvironment?.syncCutaway({enabled:!sourceFollowing,focus:orbit.target});
   if(!(studioEnvironment?.ready&&studioEnvironment?.visible&&studioEnvironment?.xray)){
     renderer.render(world,camera);return;
   }
@@ -190,6 +194,7 @@ function showFrame(index){
   scrub.setAttribute('aria-valuetext',`${(sourceStart+frame/fps).toFixed(3)} source seconds`);
   if(!motion)return;
   followSourceCamera();
+  navigation?.setSubjects(visibleSubjects(),{follow:!sourceFollowing});
   const signature=JSON.stringify([frame,contactSettings,figureSettings,studioEnvironment?.ready&&studioEnvironment?.visible,studioEnvironment?.xray,[...objects.values()].map(object=>object.checkbox.checked)]);
   if(signature===displayedFrameSignature)return;
   displayedFrameSignature=signature;
@@ -383,14 +388,16 @@ document.addEventListener('keydown',event=>{
 function sync(){if(!video.paused)showFrame(Math.floor(video.currentTime*fps+0.001));requestAnimationFrame(sync);}sync();
 
 function preset(name){
+  applyingCameraPreset=true;
+  // Finish damping before every preset so an old drag cannot displace it.
+  const damping=orbit.enableDamping;orbit.enableDamping=false;orbit.update();orbit.enableDamping=damping;
+  applyingCameraPreset=false;
   if(name==='source'&&hasSourceCamera()){
-    // Flush an unfinished orbit gesture before applying the exact tracked pose.
-    const damping=orbit.enableDamping;orbit.enableDamping=false;orbit.update();orbit.enableDamping=damping;
     sourceFollowing=true;followSourceCamera();setCameraButtons('source');return;
   }
   sourceFollowing=false;camera.fov=48;updateCameraProjection();
-  const bounds=new THREE.Box3();
-  for(const person of motion.frames[frame].people)for(const xyz of person.xyz)bounds.expandByPoint(new THREE.Vector3(...xyz));
+  navigation.setSubjects(visibleSubjects());navigation.allowAboveCeiling=name==='overhead';
+  const bounds=navigation.bounds;
   const focus=bounds.isEmpty()?center:bounds.getCenter(new THREE.Vector3());
   const size=bounds.isEmpty()?extent:Math.max(2,bounds.getSize(new THREE.Vector3()).length());
   const distance=size*1.25;
@@ -398,7 +405,8 @@ function preset(name){
   if(name==='side')camera.position.copy(focus).add(new THREE.Vector3(distance,0.3*size,0));
   else if(name==='overhead'){camera.position.copy(focus).add(new THREE.Vector3(0,distance,0.001));camera.up.set(0,0,-1);}
   else camera.position.copy(focus).add(new THREE.Vector3(0,0.2*size,distance));
-  camera.lookAt(focus);orbit.update();
+  camera.lookAt(focus);navigation.constrain(studioEnvironment);navigation.fitProjection();
+  applyingCameraPreset=true;orbit.update();applyingCameraPreset=false;navigation.constrain(studioEnvironment);
   setCameraButtons(name);
 }
 function validate(data){
@@ -465,7 +473,15 @@ async function load(){
     renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;
     camera=new THREE.PerspectiveCamera(48,1,0.01,1000);stage.append(renderer.domElement);
     orbit=new OrbitControls(camera,renderer.domElement);orbit.enableDamping=true;
-    orbit.addEventListener('start',()=>{sourceFollowing=false;setCameraButtons(null);});
+    navigation=new SceneNavigation(camera,orbit);
+    orbit.addEventListener('start',()=>{if(!sourceFollowing)setCameraButtons(null);});
+    orbit.addEventListener('change',()=>{
+      if(applyingCameraPreset||!sourceFollowing)return;
+      // Release the exact footage pose only after an actual drag/zoom, not a
+      // pointer-down. Subsequent rotation uses the visible group as its pivot.
+      sourceFollowing=false;navigation.allowAboveCeiling=false;
+      navigation.center();updateCameraProjection();navigation.constrain(studioEnvironment);setCameraButtons(null);
+    });
     const bounds=new THREE.Box3();
     for(const f of motion.frames)for(const p of f.people)for(const xyz of p.xyz)bounds.expandByPoint(new THREE.Vector3(...xyz));
     if(bounds.isEmpty())throw Error('Scene contains no visible joints.');
@@ -578,7 +594,7 @@ async function load(){
     $('sceneStatus').textContent=hasSourceCamera()?(motion.roomCalibration?.id?'Studio camera matched to the footage. Figure depth and scale remain estimates.':'Estimated source camera ready. Compare the 3D motion with the footage; depth and scale remain estimates.'):'3D estimates ready. Compare depth and contact with the footage.';$('sceneStatus').classList.add('ready');
     if(video.error)showVideoError();
     applySceneView(sceneView);
-    function render(){if(!sourceFollowing)orbit.update();renderSceneFrame();requestAnimationFrame(render);}render();
+    function render(){if(!sourceFollowing){orbit.update();navigation.constrain(studioEnvironment);}renderSceneFrame();requestAnimationFrame(render);}render();
     const configUrl=site?siteLesson.environment:'studio/environment.json';
     if(configUrl){
       studioEnvironment=new StudioEnvironment({world,renderer,camera,orbit,canvas:renderer.domElement,grid,motion,configUrl,onChange:()=>showFrame(frame)});

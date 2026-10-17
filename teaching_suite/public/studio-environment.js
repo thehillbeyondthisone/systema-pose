@@ -31,7 +31,7 @@ export class StudioEnvironment {
         if(this.matchesRecord(saved))this.alignment={...saved.alignment};
       }catch{}
       this.fill();this.updateCalibrationLabel();
-      const {SparkRenderer,SplatMesh}=await import('./vendor/spark/spark.module.js');
+      const {SparkRenderer,SplatMesh,dyno}=await import('./vendor/spark/spark.module.js');
       const asset=new URL(config.asset,new URL(this.configUrl,location.href));
       if(config.sourceSha256)asset.searchParams.set('v',config.sourceSha256);
       const assetUrl=asset.href;
@@ -46,6 +46,7 @@ export class StudioEnvironment {
         if(event.total)this.status.textContent=`Loading studio scan · ${Math.round(event.loaded/event.total*100)}%`;
       }});
       this.group.add(this.mesh);await this.mesh.initialized;
+      this.installCutaway(dyno);
       this.ready=true;this.visible=$('studioVisible').checked;
       $('studioControls').disabled=false;this.apply();
       this.status.textContent=this.readyMessage();
@@ -57,6 +58,38 @@ export class StudioEnvironment {
       this.status.textContent=error.message;this.status.dataset.state='error';
       $('studioRetry').hidden=false;$('studioControls').disabled=true;this.onChange();
     }
+  }
+  installCutaway(dyno){
+    const focus=new dyno.DynoVec3({value:new THREE.Vector3()}),direction=new dyno.DynoVec3({value:new THREE.Vector3(0,0,1)});
+    const floor=new dyno.DynoVec4({value:new THREE.Vector4(0,1,0,0)}),strength=new dyno.DynoFloat({value:0});
+    this.cutaway={focus,direction,floor,strength};
+    this.mesh.worldModifier=dyno.dynoBlock({gsplat:dyno.Gsplat},{gsplat:dyno.Gsplat},({gsplat})=>({gsplat:new dyno.Dyno({
+      inTypes:{gsplat:dyno.Gsplat,focus:'vec3',direction:'vec3',floor:'vec4',strength:'float'},outTypes:{gsplat:dyno.Gsplat},
+      inputs:{gsplat,focus,direction,floor,strength},
+      statements:({inputs:i,outputs:o})=>[
+        `${o.gsplat} = ${i.gsplat};`,
+        `${o.gsplat}.rgba.a *= 1.0 - ${i.strength} * smoothstep(0.45, 0.85, dot(${i.gsplat}.center - ${i.focus}, ${i.direction})) * smoothstep(0.08, 0.25, dot(vec4(${i.gsplat}.center, 1.0), ${i.floor}));`,
+      ],
+    }).outputs.gsplat}));
+    this.mesh.updateGenerator();
+  }
+  syncCutaway({enabled,focus}){
+    if(!this.ready||!this.cutaway)return;
+    const active=enabled&&this.visible,nextStrength=active?1:0,{cutaway}=this;
+    if(!active&&cutaway.strength.value===0)return;
+    const direction=this.camera.position.clone().sub(focus).normalize();
+    this.group.updateWorldMatrix(true,false);
+    const nav=this.config.navigation,normal=new THREE.Vector3(0,1,0),point=new THREE.Vector3();
+    if(nav?.coordinateSpace==='scan-local'&&Number.isFinite(nav.min?.[2])){
+      normal.set(0,0,1).applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(this.group.matrixWorld));
+      point.set(0,0,nav.min[2]).applyMatrix4(this.group.matrixWorld);
+    }
+    const floor=new THREE.Vector4(normal.x,normal.y,normal.z,-normal.dot(point));
+    if(cutaway.strength.value===nextStrength&&cutaway.focus.value.distanceToSquared(focus)<1e-10&&cutaway.direction.value.distanceToSquared(direction)<1e-10&&cutaway.floor.value.clone().sub(floor).lengthSq()<1e-10)return;
+    cutaway.strength.value=nextStrength;cutaway.focus.value.copy(focus);cutaway.direction.value.copy(direction);cutaway.floor.value.copy(floor);
+    // Only regenerate when the view changes; normal paused frames reuse the
+    // scan buffers. The floor and far walls retain their original appearance.
+    this.mesh.updateVersion();
   }
   bind(){
     window.addEventListener('message',event=>{
