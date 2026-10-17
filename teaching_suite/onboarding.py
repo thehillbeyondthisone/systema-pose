@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -14,8 +15,25 @@ LESSONS = Path(os.environ.get('SYSTEMA_DATA_DIR', str(ROOT / 'data'))) / 'lesson
 LESSONS.mkdir(parents=True, exist_ok=True)
 JOB_LOCK = threading.Lock()
 ACTIVE = set()
+PROCESSES = {}
+GPU_STOPPED = set()
 MAX_UPLOAD = 500 * 1024 * 1024
 MAX_SECONDS = 90
+
+
+def gpu_paused():
+    path = LESSONS.parent / 'admin/state.json'
+    return not path.exists() or json.loads(path.read_text(encoding='utf-8')).get('gpuPaused', True)
+
+
+def stop_gpu_jobs():
+    stopped = 0
+    for lesson_id, value in list(PROCESSES.items()):
+        if value['usesGpu'] and value['process'].poll() is None:
+            GPU_STOPPED.add(lesson_id)
+            try:value['process'].terminate();stopped += 1
+            except ProcessLookupError:pass
+    return stopped
 
 
 def save(path, value):
@@ -126,8 +144,23 @@ def run_job(lesson_id):
     try:
         with JOB_LOCK:
             with (dest / 'generation.log').open('w', encoding='utf-8') as log:
-                result = subprocess.run(worker_command('--generate', dest), stdout=log, stderr=log, timeout=3600)
-            if result.returncode:
+                uses_gpu = not gpu_paused()
+                provider = 'DmlExecutionProvider' if uses_gpu else 'CPUExecutionProvider'
+                process = subprocess.Popen(worker_command('--generate', dest, '--execution-provider', provider), stdout=log, stderr=log,
+                                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                PROCESSES[lesson_id] = {'process': process, 'usesGpu': uses_gpu}
+                deadline = time.monotonic() + 3600
+                try:
+                    while True:
+                        try:code = process.wait(timeout=1);break
+                        except subprocess.TimeoutExpired:
+                            if uses_gpu and gpu_paused():GPU_STOPPED.add(lesson_id);process.terminate()
+                            if time.monotonic() > deadline:
+                                process.kill();process.wait();raise RuntimeError('2D preparation timed out. Retry a shorter passage.')
+                finally:PROCESSES.pop(lesson_id, None)
+            if lesson_id in GPU_STOPPED:
+                raise RuntimeError('Preparation stopped to free the GPU. Your video is saved; retry to prepare on the CPU.')
+            if code:
                 raise RuntimeError('Skeleton generation stopped. Your video and passages are saved. Retry generation; details are in the local generation log.')
     except Exception as failure:
         lesson = read(lesson_id)
@@ -135,6 +168,7 @@ def run_job(lesson_id):
         save(dest / 'lesson.json', lesson)
     finally:
         ACTIVE.discard(lesson_id)
+        GPU_STOPPED.discard(lesson_id)
 
 
 def generate(lesson_id):

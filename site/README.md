@@ -36,13 +36,25 @@ loopback connections; they are excluded from the GitHub Pages build.
    its own video, tracking, poster, stable ID and original source time range.
    Unselected footage, student notes and original uploads are excluded.
    **Unstage** backs out before publication and preserves the exported files locally.
-5. **Optional 3D.** Download the exported processing video from its staged card.
-   Run the separate GPU reconstruction workflow, then attach its reviewed
-   `scene.json`. The video hash, times, frame count and participant IDs must match.
-   The dashboard does not infer XYZ from 2D or reuse the pilot's room calibration.
-   A different camera or room needs its own calibration before adding a splat.
-6. **Build and review the public preview.** This uses the actual Pages builder.
-7. **Publish reviewed clips.** The dashboard commits only the staged clip assets
+5. **Reconstruct 3D.** The workstation panel checks the installed `Systema3D`
+   WSL environment, Python packages, model files and disk space without using
+   the GPU. Choose **Enable & check GPU** when it is available to validate CUDA
+   operations, imports and body-model forward passes.
+   On a staged passage of at least one second, choose **Reconstruct 3D**.
+   Leave camera-motion estimation enabled unless the footage is from a fixed
+   tripod. The real PromptHMR pipeline retains reviewed 2D participant IDs,
+   estimates a fresh camera, reconstructs shared XYZ motion and fits the floor.
+   It does not reuse the sample's camera or room calibration. Follow its phase
+   and local log; **Cancel** preserves the source and each retry has a new run
+   folder. Reconstruction keeps an 8 GiB reserve on the project/runtime drives.
+6. **Review 3D scene.** The synchronized source and orbit viewer opens inside
+   the dashboard. Check source, side and overhead views, identity continuity,
+   hidden limbs and foot placement, then save the 3D review. Publication checks
+   the exact reviewed scene hash. Depth, scale and contact remain estimates.
+   A different camera or room needs a separate calibration before adding a splat.
+   Existing matching scene JSON can still be imported under **Advanced**.
+7. **Build and review the public preview.** This uses the actual Pages builder.
+8. **Publish reviewed clips.** The dashboard commits only the staged clip assets
    and catalog, then pushes to `main` using the workstation's GitHub connection.
    GitHub Actions deploys the update. Unrelated workspace changes and a stale
    preview block publishing. The activity log distinguishes a successful push
@@ -52,6 +64,25 @@ The dashboard uses the installed local runtime and model files; it does not
 download processing models or remote video links. Keep the server running while
 preparation or publication jobs are active. `manage_requests.py` remains available
 for requested videos and command-line processing.
+
+Installed-requirement checks run on startup and through **Check installed
+requirements**, using the CPU. GPU use starts paused by default; the pause is
+saved across restarts, and 2D tracking uses the CPU while paused. **Pause GPU
+use** stops accelerated jobs and blocks new reconstruction. Videos are preserved;
+interrupted 2D preparation can be retried on the CPU. Only **Enable & check
+GPU** authorizes GPU validation, which also runs before a reconstruction.
+Missing packages, model files,
+GPU support or storage are listed in diagnostics; the check does not silently
+install packages or accept model licenses. This workstation already has the
+dedicated runtime and licensed body models from the sample reconstruction.
+Private reconstruction intermediates/logs are under
+`teaching_suite/data/admin/reconstruction/<clip-id>/<run-id>/`; only the matched
+scene and selected clip assets are eligible for publication. After a server
+restart, interrupted workers are stopped and their runs can be retried.
+
+Lesson details and draft passages are remembered in this browser when switching
+videos or refreshing. Once tracking is prepared, the server's locked passage
+times remain authoritative. Sharing approvals are not restored automatically.
 
 ### Prepared files and manual publishing
 

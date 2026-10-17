@@ -210,6 +210,8 @@ class Handler(SimpleHTTPRequestHandler):
             if path.startswith(('/admin','/api/admin')):
                 if not admin.local_request(self):return self.send_json({'error':'Open the admin dashboard on this PC using http://127.0.0.1 and the server port.'},403)
                 if path=='/api/admin/state':return self.send_json(admin.state())
+                match=re.fullmatch(r'/api/admin/clips/([a-z0-9]+(?:-[a-z0-9]+)*)/reconstruction/log',path)
+                if match:return self.send_json(admin.reconstruction.log(admin,match[1]))
             if path=='/api/video-requests':
                 return self.send_json({'requests':[{k:v for k,v in r.items() if k!='studentId'} for r in student_data.requests(self.student())]})
             if path=='/api/annotations':
@@ -246,6 +248,13 @@ class Handler(SimpleHTTPRequestHandler):
                 if path=='/api/admin/unstage':return self.send_json(admin.unstage(raw['clipId']))
                 if path=='/api/admin/preview':return self.send_json(admin.build_preview(),202)
                 if path=='/api/admin/publish':return self.send_json(admin.publish(raw),202)
+                if path=='/api/admin/requirements':return self.send_json(admin.reconstruction.requirements(admin,use_gpu=raw.get('gpu') is True),202)
+                if path=='/api/admin/gpu/pause':return self.send_json(admin.reconstruction.pause_gpu(admin))
+                match=re.fullmatch(r'/api/admin/clips/([a-z0-9]+(?:-[a-z0-9]+)*)/(reconstruct|cancel|review)',path)
+                if match:
+                    if match[2]=='reconstruct':return self.send_json(admin.reconstruction.reconstruct(admin,match[1],raw),202)
+                    if match[2]=='cancel':return self.send_json(admin.reconstruction.cancel(admin,match[1]))
+                    return self.send_json(admin.reconstruction.approve(admin,match[1],raw))
                 match=re.fullmatch(r'/api/admin/clips/([a-z0-9]+(?:-[a-z0-9]+)*)/scene',path)
                 if match:return self.send_json(admin.attach_scene(match[1],raw))
                 return self.send_json({'error':'Unknown admin action.'},404)
@@ -300,6 +309,7 @@ if __name__=='__main__':
     host='0.0.0.0' if args.lan else args.host
     initialize()
     onboarding.recover()
+    admin.reconstruction.recover(admin)
     print(f'Systema teaching prototype: http://127.0.0.1:{args.port}/',flush=True)
     print(f'Local video admin: http://127.0.0.1:{args.port}/admin',flush=True)
     if host=='0.0.0.0':
@@ -308,6 +318,7 @@ if __name__=='__main__':
         else:print(f'LAN access: http://<this-computer-ip>:{args.port}/',flush=True)
         print('Keep this window open. Press Ctrl+C to stop.',flush=True)
     httpd=ThreadingHTTPServer((host,args.port),Handler)
+    admin.reconstruction.requirements(admin)
     if args.admin:
         import webbrowser
         webbrowser.open(f'http://127.0.0.1:{args.port}/admin')

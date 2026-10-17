@@ -16,6 +16,7 @@ import uuid
 from urllib.parse import urlparse
 
 import onboarding
+import reconstruction
 
 WORKSPACE = Path(__file__).resolve().parent.parent
 PROJECT = Path(os.environ.get('SYSTEMA_ADMIN_PROJECT_ROOT', str(WORKSPACE))).resolve()
@@ -79,12 +80,15 @@ def state():
     with LOCK:
         record = saved()
         entries = catalog()['lessons']
+        runtime = reconstruction.runtime_state(sys.modules[__name__])
         lessons = [{key: lesson.get(key) for key in ('id', 'title', 'status', 'message', 'progress', 'segments', 'sourceEnd', 'video', 'people')}
                    for lesson in onboarding.library()]
         return {'token': TOKEN, 'lessons': lessons, 'clips': entries, 'staged': record['staged'],
                 'preview': record.get('preview'), 'jobs': [dict(value) for value in list(JOBS.values())[-10:]],
-                'processingAvailable': (WORKSPACE / 'work/models/manifest.json').is_file() and (WORKSPACE / 'work/runtime/cv2').is_dir(),
-                'threeD': 'Attach a reviewed world-3D scene after the GPU reconstruction step. Room calibration is separate.'}
+                'processingAvailable': runtime.get('videoReady',
+                    (WORKSPACE / 'work/models/manifest.json').is_file() and (WORKSPACE / 'work/runtime/cv2').is_dir()),
+                'threeD': runtime,
+                'reconstructions': reconstruction.records(sys.modules[__name__])}
 
 
 def job(kind, action):
@@ -99,7 +103,7 @@ def job(kind, action):
         try:
             result = action(identity, value) or {}
             with LOCK:
-                value.update(result, status='complete', completedAt=now())
+                value.update(result, status=result.pop('status', 'complete'), completedAt=now())
         except Exception as failure:
             with LOCK:
                 value.update(status='failed', message=str(failure), completedAt=now())
@@ -190,9 +194,9 @@ def stage(raw):
     return job('stage', action)
 
 
-def attach_scene(clip_id, scene):
+def attach_scene(clip_id, scene, internal=False):
     with LOCK:
-        if BUSY.locked():
+        if BUSY.locked() and not internal:
             raise ValueError('Wait for the current publishing job to finish.')
         if clip_id not in saved()['staged']:
             raise ValueError('Attach 3D to a newly staged clip before publishing.')
@@ -223,6 +227,12 @@ def attach_scene(clip_id, scene):
         scene['people'] = entry['people']
         destination = 'site/clips/'+clip_id+'/scene.json';onboarding.save(PROJECT / destination, scene);entry['scene'] = destination
         onboarding.save(CATALOG, value);record = saved();record['preview'] = None;save_state(record)
+        managed = reconstruction.record_path(sys.modules[__name__], clip_id)
+        if not internal and managed.exists():
+            review = json.loads(managed.read_text(encoding='utf-8'))
+            review.update(status='ready', reviewed=False, sceneSha256=digest(PROJECT / destination), message='Imported scene ready for 3D review.')
+            review.pop('reviewUrl', None)
+            onboarding.save(managed, review)
         return {'message': 'Matching 3D scene attached. Room calibration remains separate.'}
 
 
@@ -243,6 +253,8 @@ def unstage(clip_id):
         if source.exists():shutil.move(str(source), str(destination))
         value = catalog();value['lessons'] = [entry for entry in value['lessons'] if entry['id'] != clip_id]
         onboarding.save(CATALOG, value);record['staged'].remove(clip_id);record['preview'] = None;save_state(record)
+        reconstruction_state = reconstruction.record_path(sys.modules[__name__], clip_id)
+        if reconstruction_state.exists():reconstruction_state.replace(reconstruction_state.with_name('unstaged.json'))
         return {'message': 'Clip unstaged. Exported files are preserved locally; the original video is unchanged.'}
 
 
@@ -268,19 +280,24 @@ def fingerprint():
     return sha.hexdigest()
 
 
+def make_preview(identity):
+    before = fingerprint();output = DATA / 'previews' / identity
+    result = subprocess.run([sys.executable, str(PROJECT / 'work/build_pages.py'), '--output', str(output), '--catalog', str(CATALOG)],
+                            cwd=PROJECT, capture_output=True, text=True, timeout=300)
+    if result.returncode:
+        raise ValueError((result.stderr or result.stdout)[-2500:])
+    if before != fingerprint():
+        raise ValueError('The catalog or assets changed during the build. Build a fresh preview.')
+    preview = {'id': identity, 'url': f'/admin-preview/{identity}/', 'fingerprint': before, 'createdAt': now()}
+    with LOCK:
+        record = saved();record['preview'] = preview;save_state(record)
+    return preview
+
+
 def build_preview():
     def action(identity, progress):
         progress['message'] = 'Building the public viewer preview…'
-        before = fingerprint();output = DATA / 'previews' / identity
-        result = subprocess.run([sys.executable, str(PROJECT / 'work/build_pages.py'), '--output', str(output), '--catalog', str(CATALOG)],
-                                cwd=PROJECT, capture_output=True, text=True, timeout=300)
-        if result.returncode:
-            raise ValueError((result.stderr or result.stdout)[-2500:])
-        if before != fingerprint():
-            raise ValueError('The catalog or assets changed during the build. Build a fresh preview.')
-        preview = {'id': identity, 'url': f'/admin-preview/{identity}/', 'fingerprint': before, 'createdAt': now()}
-        with LOCK:
-            record = saved();record['preview'] = preview;save_state(record)
+        preview = make_preview(identity)
         return {'message': 'Preview ready. Review it, then publish.', 'preview': preview['url']}
     return job('preview', action)
 
@@ -290,6 +307,7 @@ def publish(raw):
         raise ValueError('Review the public preview before publishing.')
     def action(identity, progress):
         record = saved();preview = record.get('preview')
+        reconstruction.publish_check(sys.modules[__name__], record['staged'])
         if not record['staged'] or not preview or preview['fingerprint'] != fingerprint():
             raise ValueError('Build and review a fresh preview for the staged clips first.')
         if git('branch', '--show-current').stdout.strip() != 'main':

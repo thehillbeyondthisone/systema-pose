@@ -35,7 +35,7 @@ def preflight(repo, input_path, output):
     return manifest
 
 
-def export_scene(pipeline, results, output, manifest, reviewed_identities=False):
+def export_scene(pipeline, results, output, manifest, reviewed_identities=False, reference_motion=None):
     """Export final world pose parameters as joints; all people retain shared translations."""
     import numpy as np
     import torch
@@ -58,11 +58,12 @@ def export_scene(pipeline, results, output, manifest, reviewed_identities=False)
         shape = np.asarray(world['shape']).reshape(len(indices), -1)
         translation = np.asarray(world['trans']).reshape(len(indices), 3)
         track_id = int(track['track_id'])
-        reference_id = track_id if reviewed_identities else None
-        name = manifest['participants'][str(track_id)] if reviewed_identities else f'Reconstructed person {track_id}'
+        matched = reviewed_identities or reference_motion is not None
+        reference_id = track_id if matched else None
+        name = manifest['participants'][str(track_id)] if matched else f'Reconstructed person {track_id}'
         palette = ['#ffc45f', '#7bc7ed', '#bda4ee', '#94d8b8']
         people_meta.append({'id': track_id, 'name': name, 'reference2dId': reference_id,
-                            'color': palette[track_id - 1] if reviewed_identities else None})
+                            'color': palette[(track_id - 1) % len(palette)] if matched else None})
         for start in range(0, len(indices), 16):
             stop = min(len(indices), start + 16)
             aa = torch.as_tensor(pose[start:stop], dtype=torch.float32, device='cuda')
@@ -78,7 +79,7 @@ def export_scene(pipeline, results, output, manifest, reviewed_identities=False)
             for i, xyz in zip(indices[start:stop], joints):
                 if i < 0 or i >= frame_count:
                     raise ValueError('Track frame is outside the source timeline.')
-                identity_status = 'identity_from_reviewed_2d_tracks' if reviewed_identities else 'identity_unreviewed'
+                identity_status = 'identity_from_reviewed_2d_tracks' if matched else 'identity_unreviewed'
                 frames[i]['people'].append({'id': track_id, 'xyz': xyz.tolist(), 'reviewed': False,
                                             'status': ['monocular_depth_estimate', identity_status, 'contact_unreviewed']})
     parent = model.parents[:22].cpu().tolist()
@@ -91,8 +92,12 @@ def export_scene(pipeline, results, output, manifest, reviewed_identities=False)
              'camera': {key: np.asarray(results['camera_world'][key]).tolist()
                         for key in ['Rwc', 'Twc', 'Rcw', 'Tcw', 'img_focal', 'img_center']},
              'method': 'PromptHMR world-video reconstruction',
-             'identityMapping2d': {str(track_id): track_id for track_id in [p['id'] for p in people_meta]} if reviewed_identities else None}
-    if reviewed_identities:
+             'identityMapping2d': {str(track_id): track_id for track_id in [p['id'] for p in people_meta]} if matched else None}
+    if reference_motion is not None:
+        from dashboard_3d_worker import annotate
+        annotate(scene, reference_motion)
+        scene['people'] = reference_motion['people']
+    elif reviewed_identities:
         from annotate_3d_quality import annotate_tracking_quality
         annotate_tracking_quality(scene, ROOT / 'outputs/pilot/poses-tracked.jsonl')
     scene_path = output / 'scene.json'
@@ -109,6 +114,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--repo', type=Path, default=ROOT / 'work' / 'PromptHMR')
     parser.add_argument('--output', type=Path, default=ROOT / 'outputs' / '3d-pilot')
+    parser.add_argument('--input', default='multiple-attackers-18-30.mp4')
+    parser.add_argument('--reference-motion', type=Path)
     parser.add_argument('--check', action='store_true')
     parser.add_argument('--reconstruction-subdir', default='reconstruction')
     parser.add_argument('--expected-participants', type=int)
@@ -118,7 +125,8 @@ def main():
     parser.add_argument('--static-camera', action='store_true', help='Only use after reviewing the camera motion.')
     args = parser.parse_args()
     repo, output = args.repo.resolve(), args.output.resolve()
-    input_path = output / 'multiple-attackers-18-30.mp4'
+    if Path(args.input).name != args.input:raise ValueError('Input must be a filename inside the run folder.')
+    input_path = output / args.input
     try:
         manifest = preflight(repo, input_path, output)
         if args.check:
@@ -174,7 +182,13 @@ def main():
         manifest['reconstruction']['depthBatchSize'] = args.image_batch_size
         manifest['reconstruction']['clipWeights'] = 'complete encoder from main checkpoint; strict state loading retained'
         pipeline = Pipeline(static_cam=args.static_camera)
-        if args.reviewed_identities:
+        reference_motion = None
+        if args.reference_motion:
+            from dashboard_3d_worker import bind_tracks, install_progress
+            reference_motion = json.loads(args.reference_motion.read_text(encoding='utf-8'))
+            bind_tracks(pipeline, reference_motion)
+            install_progress(pipeline, output)
+        elif args.reviewed_identities:
             import joblib
             import numpy as np
             from types import MethodType
@@ -222,7 +236,7 @@ def main():
         results = pipeline(str(input_path), str(reconstruction_output), static_cam=args.static_camera, save_only_essential=True)
         if args.expected_participants is not None and len(results['people']) != args.expected_participants:
             raise ValueError(f"Expected {args.expected_participants} participants, reconstructed {len(results['people'])}.")
-        export_scene(pipeline, results, output, manifest, args.reviewed_identities)
+        export_scene(pipeline, results, output, manifest, args.reviewed_identities, reference_motion)
         print('Shared XYZ scene exported. Source/side/overhead and contact review are still required.')
     except (ValueError, FileNotFoundError) as failure:
         print(str(failure), file=sys.stderr)

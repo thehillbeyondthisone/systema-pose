@@ -67,11 +67,11 @@ function renderSceneFrame(){
     renderer.autoClear=autoClear;world.background=background;
   }
 }
-const sourceAspect=16/9;
+let sourceAspect=16/9;
 const sourceRotation=new THREE.Matrix4();
 function hasSourceCamera(){
   const data=motion?.camera;
-  return Boolean(motion?.roomCalibration?.id&&data?.Rcw?.length===frameCount&&data?.Tcw?.length===frameCount&&
+  return Boolean(data?.Rcw?.length===frameCount&&data?.Tcw?.length===frameCount&&
     Number.isFinite(data.img_focal)&&data.img_focal>0&&data.img_center?.length===2&&data.img_center.every(value=>Number.isFinite(value)&&value>0));
 }
 function setCameraButtons(name){
@@ -456,6 +456,7 @@ async function load(){
         figureSettings={defaultStyle:saved.defaultStyle,participants:Object.fromEntries(Object.entries(saved.participants).filter(([id,style])=>data.people.some(person=>String(person.id)===id)&&validStyle(style)))};
       }
     }catch{}
+    if(motion.camera?.img_center?.every(value=>Number.isFinite(value)&&value>0))sourceAspect=motion.camera.img_center[0]/motion.camera.img_center[1];
     const stage=$('orbitStage');world=new THREE.Scene();world.background=new THREE.Color('#142234');
     studioLighting=new StudioLighting(world);
     contactShadows=new ContactShadows({world,motion});
@@ -574,7 +575,7 @@ async function load(){
     }
     $('resetCamera').disabled=false;$('resetCamera').addEventListener('click',()=>preset(hasSourceCamera()?'source':'front'));
     preset(hasSourceCamera()?'source':'front');showFrame(frame);
-    $('sceneStatus').textContent=hasSourceCamera()?'Studio camera matched to the footage. Figure depth and scale remain estimates.':'3D estimates ready. Compare depth and contact with the footage.';$('sceneStatus').classList.add('ready');
+    $('sceneStatus').textContent=hasSourceCamera()?(motion.roomCalibration?.id?'Studio camera matched to the footage. Figure depth and scale remain estimates.':'Estimated source camera ready. Compare the 3D motion with the footage; depth and scale remain estimates.'):'3D estimates ready. Compare depth and contact with the footage.';$('sceneStatus').classList.add('ready');
     if(video.error)showVideoError();
     applySceneView(sceneView);
     function render(){if(!sourceFollowing)orbit.update();renderSceneFrame();requestAnimationFrame(render);}render();

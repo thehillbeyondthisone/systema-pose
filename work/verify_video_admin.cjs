@@ -1,20 +1,27 @@
 const {chromium}=require(process.env.SYSTEMA_PLAYWRIGHT||'C:/Users/thefo/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
-const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const ROOT=path.resolve(__dirname,'..'),BASE=process.env.SYSTEMA_ADMIN_TEST_URL,OUT=process.env.SYSTEMA_ADMIN_TEST_OUTPUT,PROJECT=process.env.SYSTEMA_ADMIN_TEST_PROJECT;
 const report={checks:[],errors:[],failed:[]};const pass=text=>{report.checks.push(text);console.log('PASS '+text);};let browser;
 (async()=>{try{
- browser=await chromium.launch({channel:'msedge',headless:true});const context=await browser.newContext({viewport:{width:1440,height:1100}}),page=await context.newPage();page.setDefaultTimeout(120000);
+ browser=await chromium.launch({channel:'msedge',headless:true,args:['--disable-gpu','--disable-webgl','--disable-gpu-compositing','--disable-accelerated-2d-canvas','--disable-accelerated-video-decode']});const context=await browser.newContext({viewport:{width:1440,height:1100}}),page=await context.newPage();page.setDefaultTimeout(120000);
  page.on('pageerror',e=>report.errors.push(e.message));page.on('response',r=>{if(r.status()>=500)report.failed.push(r.url());});
- await page.goto(BASE+'/admin');await page.waitForFunction(()=>!document.getElementById('importVideo').disabled&&document.getElementById('adminStatus').textContent.includes('connected'));
+ await page.goto(BASE+'/admin/');await page.waitForFunction(()=>!document.getElementById('importVideo').disabled&&document.getElementById('runtimeSummary').textContent.startsWith('Installed'));
+ let cpuState=await (await fetch(BASE+'/api/admin/state')).json();assert(cpuState.threeD.gpuPaused);assert(!cpuState.threeD.ready);assert(cpuState.threeD.checks.filter(check=>check.ok===null).length===2);
+ await page.locator('#checkRequirements').click();await page.waitForFunction(()=>!document.getElementById('checkRequirements').disabled&&document.getElementById('runtimeSummary').textContent.startsWith('Installed'));
+ pass('Server startup and installed-requirement rechecks use no GPU; CUDA/body-model tests remain deferred and GPU pause is visible');
  await page.locator('#adminVideo').setInputFiles(path.join(ROOT,'outputs/pilot/source-reference.mp4'));await page.locator('#importVideo').click();
  await page.locator('#editorContent').waitFor();await page.locator('#adminTitle').fill('Admin workflow verification');await page.locator('#adminSlug').fill('admin-review-test');
  await page.locator('[data-field="start"]').fill('0.1');await page.locator('[data-field="end"]').fill('0.3');await page.locator('[data-field="label"]').fill('Short reviewed passage');
+ await page.locator('#adminDescription').fill('Draft details survive navigation.');await page.locator('#adminCategory').selectOption('Sparring');
+ await page.reload();await page.locator('#editorContent').waitFor();assert.equal(await page.locator('#adminSlug').inputValue(),'admin-review-test');assert.equal(await page.locator('#adminDescription').inputValue(),'Draft details survive navigation.');assert.equal(await page.locator('#adminCategory').inputValue(),'Sparring');assert.equal(await page.locator('[data-field=start]').inputValue(),'0.1');assert.equal(await page.locator('[data-field=end]').inputValue(),'0.3');assert(!await page.locator('#reviewedMotion').isChecked());
+ pass('Per-video draft details and passages survive refresh while sharing approvals remain unchecked');
  assert(await page.locator('#stageVideo').isDisabled());await page.locator('#prepareVideo').click();
  await page.waitForFunction(()=>['ready','failed'].includes(document.getElementById('lessonState').textContent),null,{timeout:240000});
  assert.equal(await page.locator('#lessonState').textContent(),'ready',await page.locator('#prepareStatus').textContent());
  let state=await (await fetch(BASE+'/api/admin/state')).json(),lesson=state.lessons[0];const motion=await (await fetch(BASE+`/lessons/${lesson.id}/motion.json`)).json();
  assert.equal(JSON.parse(fs.readFileSync(path.join(OUT,'private-data/lessons',lesson.id,'lesson.json'))).adminPrivate,true);
  assert.equal(motion.frames.length,6);assert(motion.frames.some(frame=>frame.people.length>0));assert(await page.locator('#reviewMotion').isVisible());
+ assert(fs.readFileSync(path.join(OUT,'private-data/lessons',lesson.id,'generation.log'),'utf8').includes('CPUExecutionProvider'));
  pass('A real video imports, selected passages run through the installed 2D pose worker, and review links appear only when ready');
  const job=async(button)=>{
   const before=await page.locator('#adminJobs li').first().getAttribute('data-job-id').catch(()=>null);await button.click();
@@ -29,6 +36,7 @@ const report={checks:[],errors:[],failed:[]};const pass=text=>{report.checks.pus
  assert.equal(await page.locator('#stagedCount').textContent(),'1 staged');state=await (await fetch(BASE+'/api/admin/state')).json();const clip=state.clips[0];
  const stagedMotion=JSON.parse(fs.readFileSync(path.join(PROJECT,clip.motion)));assert.equal(stagedMotion.sourceStart,.1);assert.equal(stagedMotion.sourceEnd,.3);assert.deepEqual(stagedMotion.frames.map(frame=>frame.frame),[0,1,2,3,4,5]);
  assert(!clip.environment);assert(await page.locator('#publishVideos').isDisabled());
+ assert(await page.locator('[data-reconstruct=admin-review-test]').isDisabled());
  pass('Only the selected six-frame passage is staged; unstage preserves files locally and permits restaging; preview is required before publishing');
  const scene=JSON.parse(fs.readFileSync(path.join(ROOT,'outputs/3d-pilot/scene.json'))),people=new Set(clip.people.map(person=>person.id));
  Object.assign(scene,{fps:30,sourceStart:.1,sourceEnd:.3,sourceSha256:'0'.repeat(64),people:clip.people,frames:scene.frames.slice(0,6).map((frame,index)=>({frame:index,people:frame.people.filter(person=>people.has(person.id))}))});delete scene.camera;
@@ -41,6 +49,15 @@ const report={checks:[],errors:[],failed:[]};const pass=text=>{report.checks.pus
  assert.equal((await job(page.locator('#buildPreview'))).status,'complete');state=await (await fetch(BASE+'/api/admin/state')).json();
  const catalog=await (await fetch(BASE+state.preview.url+'catalog.json')).json();assert.equal(catalog.lessons.length,1);assert.equal(catalog.lessons[0].has3d,true);
  assert.equal((await fetch(BASE+state.preview.url+'admin.html')).status,404);assert(await page.locator('#openPreview').isVisible());
+ const fixturePath=path.join(OUT,'private-data/admin/reconstruction/admin-review-test/state.json');fs.mkdirSync(path.dirname(fixturePath),{recursive:true});
+ fs.writeFileSync(fixturePath,JSON.stringify({clipId:clip.id,runId:'cpu-review-fixture',status:'ready',reviewed:false,sceneSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(PROJECT,'site/clips/admin-review-test/scene.json'))).digest('hex'),reviewUrl:state.preview.url+'scene.html?clip='+clip.id,message:'Review controls fixture · no reconstruction run'}));
+ await page.locator('[data-reviewed3d=admin-review-test]').waitFor();await page.locator('#reviewedPreview').check();assert(await page.locator('#publishVideos').isDisabled());
+ const paused=await fetch(BASE+'/api/admin/clips/admin-review-test/reconstruct',{method:'POST',headers:{'Content-Type':'application/json',Origin:BASE,'X-Systema-Admin-Token':state.token},body:'{}'});assert.equal(paused.status,400);assert.match((await paused.json()).error,/GPU use is paused/);
+ const blocked=await (await fetch(BASE+'/api/admin/publish',{method:'POST',headers:{'Content-Type':'application/json',Origin:BASE,'X-Systema-Admin-Token':state.token},body:'{"reviewed":true}'})).json();
+ await page.waitForFunction(id=>document.querySelector(`[data-job-id="${id}"]`)?.dataset.state==='failed',blocked.id);assert.match(await page.locator(`[data-job-id="${blocked.id}"]`).textContent(),/review the 3D/);
+ await page.locator('[data-reviewed3d=admin-review-test]').check();await page.getByRole('button',{name:'Save 3D review',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-reviewed3d=admin-review-test]')?.disabled);
+ await page.screenshot({path:path.join(OUT,'admin-staged-review.png'),fullPage:true});
+ pass('A saved-scene fixture exercises 3D review approval and publication gates without inference or WebGL; paused GPU rejects reconstruction API calls');
  const motionFile=path.join(PROJECT,clip.motion),saved=fs.readFileSync(motionFile);fs.appendFileSync(motionFile,'\n');await page.locator('#reviewedPreview').check();
  let result=await job(page.locator('#publishVideos'));assert.equal(result.status,'failed');assert.match(result.text,/fresh preview/);fs.writeFileSync(motionFile,saved);
  const unrelated=path.join(PROJECT,'unrelated.txt');fs.writeFileSync(unrelated,'User work must not be published');

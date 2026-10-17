@@ -9,7 +9,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'work' / 'runtime'))
 sys.path.insert(0, str(ROOT / 'work'))
-from onboarding import save
+from onboarding import save, gpu_paused
+
+
+def check_runtime():
+    try:
+        import cv2
+        import imageio_ffmpeg
+        import onnxruntime
+        onnxruntime.set_default_logger_severity(3)
+        from pose_runtime import load_models
+        result = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-version'], capture_output=True, timeout=15)
+        if result.returncode:raise ValueError('FFmpeg did not start.')
+        detector, pose = load_models(provider='CPUExecutionProvider')
+        return {'ready': True, 'detail': 'FFmpeg, OpenCV, ONNX detector and pose models loaded'}
+    except Exception as error:
+        return {'ready': False, 'detail': str(error)}
 
 
 def prepare(original, dest):
@@ -34,14 +49,16 @@ def prepare(original, dest):
     save(dest / 'video.json', meta)
 
 
-def generate(dest):
+def generate(dest, execution_provider=None):
     import cv2
     import numpy as np
     from pose_runtime import load_models
     lesson = json.loads((dest / 'lesson.json').read_text(encoding='utf-8'))
     lesson.update(status='processing', message='Loading skeleton models.', progress=0)
     save(dest / 'lesson.json', lesson)
-    detector, pose = load_models()
+    provider = 'CPUExecutionProvider' if gpu_paused() else (execution_provider or 'DmlExecutionProvider')
+    detector, pose = load_models(provider=provider)
+    print('2D execution provider: ' + provider, flush=True)
     cap = cv2.VideoCapture(str(dest / 'source.mp4'))
     frames, next_id, completed = [], 1, 0
     total = sum(math.ceil(s['end'] * 30) - math.ceil(s['start'] * 30) for s in lesson['segments'])
@@ -94,8 +111,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--prepare', nargs=2, metavar=('VIDEO', 'DEST'))
     parser.add_argument('--generate', type=Path)
+    parser.add_argument('--check', action='store_true')
+    parser.add_argument('--execution-provider', choices=['CPUExecutionProvider', 'DmlExecutionProvider'])
     args = parser.parse_args()
-    if args.prepare:
+    if args.check:
+        result = check_runtime();print(json.dumps(result));raise SystemExit(0 if result['ready'] else 1)
+    elif args.prepare:
         prepare(Path(args.prepare[0]), Path(args.prepare[1]))
     elif args.generate:
-        generate(args.generate)
+        generate(args.generate, args.execution_provider)

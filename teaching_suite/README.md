@@ -35,9 +35,14 @@ Requests are saved as JSON under `teaching_suite/data/video-requests/`. Submissi
 For videos already saved on this workstation, double-click
 `quickstart-admin.bat` to open the local dashboard at
 `http://127.0.0.1:8771/admin`. It imports footage, prepares selected 2D passages,
-stages only reviewed clips, builds a public preview, and publishes through Git.
-Matching 3D scenes can be attached after the separate GPU reconstruction step;
-room calibration is not copied from the sample. See the
+stages reviewed clips, runs the installed GPU reconstruction, opens synchronized
+3D review, builds a public preview, and publishes through Git. The workstation
+panel checks GPU operations, dependencies, model files and disk reserves. Each
+3D run has progress, a local log, cancel/retry, and a separate review approval.
+Startup and installed-package checks use no GPU. GPU use starts paused; enable
+it explicitly when available, or pause it to keep 2D tracking on the CPU. Draft
+details and passages are remembered per video in this browser.
+Room calibration is not copied from the sample. See the
 [publishing workflow](../site/README.md#local-video-dashboard).
 
 The commands below remain an alternative for the student request queue.
@@ -67,6 +72,15 @@ py -3 teaching_suite/manage_requests.py status REQUEST_ID declined
 A request can only be marked ready when its linked lesson is ready. The processing command retains failure logs and leaves a failed request awaiting review so it can be retried. Preparation files are saved under `teaching_suite/data/lessons/<id>/`. New videos use automatic spatial tracking: person numbers can change between passages or after overlaps. Compare motion estimates against source footage.
 
 ## Verification
+
+`work/test_dashboard_reconstruction.py` verifies GPU pause, requirements checks,
+failure recovery and exact-scene review gates without GPU execution.
+`work/verify_video_admin.py` exercises real uploads, CPU-only tracking, draft
+restoration, saved-scene review controls, preview and publication against an
+isolated local Git remote. Its browser disables GPU acceleration and WebGL.
+The full reconstruction check is separate:
+`work/verify_dashboard_3d.py --allow-gpu`. Run that only when the GPU is available;
+it has been deferred while the GPU is reserved for other work.
 
 `work/verify_view_selection.cjs` checks the view presets, independent panels, saved preferences, unchanged playback and participants, draft visibility, keyboard focus, storage failures, and 3D navigation/playback. It checks portrait and landscape phones, iPad sizes, desktop, and a 320px phone for overflow and touch targets. Run it against an isolated lesson server on port 8772, or set `SYSTEMA_TEST_URL`. Screenshots and `validation.json` are in `outputs/view-selection/`. These are browser-emulated layout checks; they do not establish live iPad Safari compatibility.
 

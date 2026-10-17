@@ -1,5 +1,6 @@
 const $=id=>document.getElementById(id);
 let state=null,selected=null,editorId=null,lastState='',pending=false,activePassage=0,lastJobNotice='',previewShown='';
+const cameraChoices=new Map(),reviewChecks=new Map();
 const element=(tag,text,className='')=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;};
 function message(text,error=false){$('adminStatus').textContent=text;$('adminStatus').dataset.error=String(error);}
 async function api(path,body){
@@ -8,6 +9,13 @@ async function api(path,body){
 }
 async function action(callback){try{pending=true;controls();await callback();await refresh();}catch(error){message(error.message,true);}finally{pending=false;controls();}}
 const current=()=>state?.lessons.find(lesson=>lesson.id===selected);
+function saveEditor(){
+  if(!editorId)return;
+  const draft={title:$('adminTitle').value,slug:$('adminSlug').value,description:$('adminDescription').value,tags:$('adminTags').value,category:$('adminCategory').value,
+    segments:[...$('adminPassages').children].map(row=>Object.fromEntries([...row.querySelectorAll('input')].map(input=>[input.dataset.field,input.type==='number'?Number(input.value):input.value])))};
+  try{localStorage.setItem('systema-admin-draft-v1:'+editorId,JSON.stringify(draft));}catch{}
+}
+function readEditor(id){try{return JSON.parse(localStorage.getItem('systema-admin-draft-v1:'+id))||{};}catch{return {};}}
 function controls(){
   const lesson=current(),working=state?.jobs.some(job=>job.status==='running'),locked=lesson&&['queued','processing','ready'].includes(lesson.status);
   $('prepareVideo').disabled=pending||!lesson||locked||!state?.processingAvailable;
@@ -15,6 +23,13 @@ function controls(){
   $('stageVideo').disabled=pending||working||lesson?.status!=='ready'||!$('reviewedMotion').checked||state?.clips.some(clip=>ids.includes(clip.id));
   $('addPassage').disabled=!lesson||locked;for(const input of $('adminPassages').querySelectorAll('input,button'))input.disabled=locked;
   $('buildPreview').disabled=pending||working||!state;$('publishVideos').disabled=pending||working||!state?.staged.length||!state?.preview||!$('reviewedPreview').checked;
+  const awaiting3d=state?.staged.some(id=>state.reconstructions?.[id]&&!state.reconstructions[id].reviewed);
+  if(awaiting3d)$('publishVideos').disabled=true;
+  $('checkRequirements').disabled=pending||working;
+  $('enableGpu').disabled=pending||working;
+  $('pauseGpu').disabled=pending;
+  for(const button of document.querySelectorAll('[data-reconstruct]'))button.disabled=pending||working||!state?.threeD.ready;
+  for(const button of document.querySelectorAll('[data-approve3d]'))button.disabled=pending||working||!reviewChecks.get(button.dataset.approve3d);
 }
 function passageRow(segment){
   const row=element('div',undefined,'admin-passage');
@@ -23,32 +38,58 @@ function passageRow(segment){
     if(type==='number'){input.min='0';input.max=String(current().sourceEnd);input.step='.033333';}else input.maxLength=80;
     input.addEventListener('focus',()=>activePassage=[...$('adminPassages').children].indexOf(row));wrapper.append(input);row.append(wrapper);
   }
-  const remove=element('button','Remove');remove.type='button';remove.addEventListener('click',()=>row.remove());row.append(remove);$('adminPassages').append(row);
+  const remove=element('button','Remove');remove.type='button';remove.addEventListener('click',()=>{row.remove();saveEditor();});row.append(remove);$('adminPassages').append(row);
 }
 function loadEditor(){
   const lesson=current();$('editorEmpty').hidden=Boolean(lesson);$('editorContent').hidden=!lesson;if(!lesson)return;
   if(editorId!==lesson.id){
-    editorId=lesson.id;$('adminTitle').value=lesson.title;$('adminSlug').value=lesson.title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,64);
-    $('adminDescription').value='';$('adminTags').value='';$('reviewedMotion').checked=false;$('adminPreviewVideo').src=lesson.video;
-    $('adminPassages').replaceChildren();for(const segment of lesson.segments?.length?lesson.segments:[{start:0,end:Math.min(12,lesson.sourceEnd),label:''}])passageRow(segment);
+    const draft=readEditor(lesson.id);editorId=lesson.id;$('adminTitle').value=draft.title??lesson.title;$('adminSlug').value=draft.slug??lesson.title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,64);
+    $('adminDescription').value=draft.description||'';$('adminTags').value=draft.tags||'';$('adminCategory').value=['Training','Sparring','Fight'].includes(draft.category)?draft.category:'Training';$('reviewedMotion').checked=false;$('adminPreviewVideo').src=lesson.video;
+    const locked=['queued','processing','ready'].includes(lesson.status),segments=locked?lesson.segments:draft.segments||lesson.segments;
+    $('adminPassages').replaceChildren();for(const segment of Array.isArray(segments)&&segments.length?segments.slice(0,12):[{start:0,end:Math.min(12,lesson.sourceEnd),label:''}])passageRow(segment);
   }
   $('lessonState').textContent=lesson.status;$('prepareStatus').textContent=lesson.message||'';
   $('reviewMotion').hidden=lesson.status!=='ready';$('reviewMotion').href='/?project='+lesson.id;
 }
 function render(){
+  const runtime=state.threeD,working=state.jobs.some(job=>job.status==='running');
+  $('runtimeSummary').textContent=runtime.ready?`Ready · ${runtime.gpu||'CUDA GPU'} · checked ${new Date(runtime.checkedAt).toLocaleTimeString()}`:runtime.status==='installed'?'Installed requirements available · GPU validation deferred':runtime.status==='checking'?'Checking workstation requirements…':runtime.status==='unchecked'?'Requirements have not been checked yet.':'Setup needs attention. Open diagnostics below.';
+  $('gpuMode').textContent=runtime.gpuPaused?'GPU paused · CPU preparation':'GPU enabled';$('gpuMode').dataset.state=runtime.gpuPaused?'paused':'ready';
+  $('gpuModeHelp').textContent=runtime.gpuPaused?'Importing, editing and 2D tracking use the CPU. GPU tests and reconstruction are paused.':'GPU validation and reconstruction are enabled. Pause here when you need the GPU for other work.';
+  $('enableGpu').hidden=runtime.ready;$('enableGpu').textContent=runtime.gpuPaused?'Enable & check GPU':'Check GPU execution';$('pauseGpu').hidden=runtime.gpuPaused;
+  $('runtimeChecks').replaceChildren();for(const check of [...runtime.checks,...runtime.storage]){const row=element('li',`${check.ok===null?'○':check.ok?'✓':'!'} ${check.name}`);row.dataset.ok=check.ok===null?'deferred':String(check.ok);row.append(element('small',check.detail));$('runtimeChecks').append(row);}
+  $('runtimeErrors').replaceChildren(...(runtime.errors||[]).map(error=>element('li',error)));
   $('adminLessons').replaceChildren();
-  for(const lesson of state.lessons){const button=element('button',undefined,lesson.id===selected?'active':'');button.append(element('strong',lesson.title),element('small',`${lesson.status}${lesson.status==='processing'?' · '+lesson.progress+'%':''}`));button.addEventListener('click',()=>{selected=lesson.id;loadEditor();render();});$('adminLessons').append(button);}
+  for(const lesson of state.lessons){const button=element('button',undefined,lesson.id===selected?'active':'');button.append(element('strong',lesson.title),element('small',`${lesson.status}${lesson.status==='processing'?' · '+lesson.progress+'%':''}`));button.addEventListener('click',()=>{saveEditor();selected=lesson.id;loadEditor();render();});$('adminLessons').append(button);}
   if(!state.lessons.length)$('adminLessons').append(element('p','No source videos imported yet.','helper'));
   loadEditor();$('stagedCount').textContent=state.staged.length+' staged';$('publicCount').textContent=state.clips.length+' clips in catalog';$('stagedClips').replaceChildren();
   const preview=state.preview?.id||'';if(preview!==previewShown){$('reviewedPreview').checked=false;previewShown=preview;}
   for(const clip of state.clips.filter(clip=>state.staged.includes(clip.id))){
-    const card=element('article');card.dataset.clipId=clip.id;card.append(element('h3',clip.title),element('p',clip.scene?'2D + matching 3D scene':'2D prepared · 3D optional'));
-    const details=element('details'),summary=element('summary','Attach reviewed 3D scene');details.append(summary,element('p','Run the GPU reconstruction on this exported video. Its scene must match the hash and passage timing.'));
+    const reconstruction=state.reconstructions?.[clip.id],running=reconstruction?.status==='running';
+    const card=element('article');card.dataset.clipId=clip.id;card.append(element('h3',clip.title),element('p',reconstruction?.message||(clip.scene?'2D + matching 3D scene':'2D ready · reconstruct this passage in 3D')));
+    if(running){const progress=element('progress');progress.removeAttribute('value');progress.setAttribute('aria-label','3D reconstruction running');card.append(progress);}
+    const cameraLabel=element('label','Camera movement','admin-camera'),camera=element('select');
+    for(const [value,title] of [['moving','Estimate camera motion'],['static','Fixed camera (tripod)']]){const option=element('option',title);option.value=value;camera.append(option);}
+    camera.value=cameraChoices.get(clip.id)||reconstruction?.camera||'moving';camera.disabled=running;camera.addEventListener('change',()=>cameraChoices.set(clip.id,camera.value));cameraLabel.append(camera);card.append(cameraLabel);
+    const actions=element('div',undefined,'admin-actions'),start=element('button',reconstruction?'Reconstruct again':'Reconstruct 3D');start.dataset.reconstruct=clip.id;
+    start.addEventListener('click',()=>action(async()=>{await api(`clips/${clip.id}/reconstruct`,{camera:camera.value});reviewChecks.delete(clip.id);$('reviewedPreview').checked=false;message('3D reconstruction started. Progress appears here; you can cancel and retry.');}));actions.append(start);
+    if(running){const cancel=element('button','Cancel');cancel.addEventListener('click',()=>action(async()=>message((await api(`clips/${clip.id}/cancel`,{})).message)));actions.append(cancel);}
+    card.append(actions);
+    const reviewUrl=(!reconstruction||reconstruction.status==='ready')?(reconstruction?.reviewUrl||(clip.scene&&state.preview?state.preview.url+'scene.html?clip='+clip.id:null)):null;
+    if(reviewUrl){const review=element('button','Review 3D scene');review.dataset.review3d=clip.id;review.addEventListener('click',()=>{$('sceneReview').hidden=false;$('sceneReviewTitle').textContent=clip.title;$('sceneReviewFrame').src=reviewUrl;$('sceneReview').scrollIntoView({behavior:'smooth',block:'start'});});card.append(review);}
+    if(reconstruction?.status==='ready'){
+      const label=element('label',undefined,'admin-check'),checkbox=element('input');checkbox.type='checkbox';checkbox.dataset.reviewed3d=clip.id;
+      checkbox.checked=reconstruction.reviewed||reviewChecks.get(clip.id)||false;checkbox.disabled=reconstruction.reviewed;
+      checkbox.addEventListener('change',()=>{reviewChecks.set(clip.id,checkbox.checked);controls();});label.append(checkbox,document.createTextNode(reconstruction.reviewed?'3D motion reviewed':'I compared the 3D motion and identities with the source.'));card.append(label);
+      if(!reconstruction.reviewed){const approve=element('button','Save 3D review');approve.dataset.approve3d=clip.id;approve.addEventListener('click',()=>action(async()=>message((await api(`clips/${clip.id}/review`,{runId:reconstruction.runId,reviewed:checkbox.checked})).message)));card.append(approve);}
+    }
+    if(reconstruction){const log=element('button','View run log');log.addEventListener('click',()=>action(async()=>{const response=await fetch(`/api/admin/clips/${clip.id}/reconstruction/log`),value=await response.json();if(!response.ok)throw Error(value.error);$('runLogText').textContent=value.text;$('runLog').hidden=false;$('runLog').open=true;}));card.append(log);}
+    const details=element('details'),summary=element('summary','Advanced: import an existing scene');details.append(summary,element('p','Optional: use a scene reconstructed from this exact exported video.'));
     const video=element('a','Download processing video');video.href=`/admin-assets/${clip.id}/source.mp4`;video.download=clip.id+'.mp4';details.append(video,element('code',clip.sourceSha256||''));
     const label=element('label','Scene JSON'),input=element('input');input.type='file';input.accept='.json,application/json';input.dataset.sceneClip=clip.id;
     input.addEventListener('change',()=>action(async()=>{const file=input.files[0];if(!file)return;if(file.size>50*1024*1024)throw Error('Choose a scene JSON under 50 MB.');const result=await api(`clips/${clip.id}/scene`,JSON.parse(await file.text()));$('reviewedPreview').checked=false;message(result.message);}));
     label.append(input);details.append(label);card.append(details);
-    const unstage=element('button','Unstage');unstage.addEventListener('click',()=>action(async()=>message((await api('unstage',{clipId:clip.id})).message)));card.append(unstage);$('stagedClips').append(card);
+    const unstage=element('button','Unstage');unstage.disabled=working;unstage.addEventListener('click',()=>action(async()=>message((await api('unstage',{clipId:clip.id})).message)));card.append(unstage);$('stagedClips').append(card);
   }
   if(!state.staged.length)$('stagedClips').append(element('p','No new clips staged. Prepare and review a video above.','helper'));
   $('openPreview').hidden=!state.preview;$('openPreview').href=state.preview?.url||'#';
@@ -78,12 +119,17 @@ $('prepareVideo').addEventListener('click',()=>action(async()=>{
   const segments=[...$('adminPassages').children].map(row=>Object.fromEntries([...row.querySelectorAll('input')].map(input=>[input.dataset.field,input.type==='number'?Number(input.value):input.value])));
   await api('prepare',{lessonId:selected,title:$('adminTitle').value,segments});message('Queued for local 2D motion preparation. Progress appears below.');
 }));
-$('addPassage').addEventListener('click',()=>{const rows=[...$('adminPassages').children];if(rows.length>=12){message('Choose up to 12 passages.',true);return;}const start=rows.length?Number(rows.at(-1).querySelector('[data-field=end]').value):0;passageRow({start,end:Math.min(start+10,current().sourceEnd),label:''});});
-for(const [id,field] of [['markStart','start'],['markEnd','end']])$(id).addEventListener('click',()=>{if(['queued','processing','ready'].includes(current()?.status))return;const row=$('adminPassages').children[activePassage]||$('adminPassages').firstElementChild;if(row)row.querySelector(`[data-field=${field}]`).value=$('adminPreviewVideo').currentTime.toFixed(3);});
+$('addPassage').addEventListener('click',()=>{const rows=[...$('adminPassages').children];if(rows.length>=12){message('Choose up to 12 passages.',true);return;}const start=rows.length?Number(rows.at(-1).querySelector('[data-field=end]').value):0;passageRow({start,end:Math.min(start+10,current().sourceEnd),label:''});saveEditor();});
+for(const [id,field] of [['markStart','start'],['markEnd','end']])$(id).addEventListener('click',()=>{if(['queued','processing','ready'].includes(current()?.status))return;const row=$('adminPassages').children[activePassage]||$('adminPassages').firstElementChild;if(row){row.querySelector(`[data-field=${field}]`).value=$('adminPreviewVideo').currentTime.toFixed(3);saveEditor();}});
+for(const id of ['adminTitle','adminSlug','adminDescription','adminTags','adminCategory','adminPassages'])for(const event of ['input','change'])$(id).addEventListener(event,saveEditor);
 $('reviewedMotion').addEventListener('change',controls);$('reviewedPreview').addEventListener('change',controls);
 $('adminSlug').addEventListener('input',controls);
 $('stageVideo').addEventListener('click',()=>action(async()=>{await api('stage',{lessonId:selected,slug:$('adminSlug').value,title:$('adminTitle').value,description:$('adminDescription').value,category:$('adminCategory').value,tags:$('adminTags').value.split(','),reviewed:$('reviewedMotion').checked});$('reviewedPreview').checked=false;message('Exporting the reviewed passages. Original footage remains local.');}));
 $('buildPreview').addEventListener('click',()=>action(async()=>{await api('preview',{});$('reviewedPreview').checked=false;message('Building a public viewer preview on this PC…');}));
 $('publishVideos').addEventListener('click',()=>action(async()=>{await api('publish',{reviewed:$('reviewedPreview').checked});message('Publishing the reviewed release. Follow the activity log below.');}));
 $('refreshAdmin').addEventListener('click',()=>refresh().catch(error=>message(error.message,true)));
+$('checkRequirements').addEventListener('click',()=>action(async()=>{await api('requirements',{});message('Checking the installed 3D workstation…');}));
+$('enableGpu').addEventListener('click',()=>action(async()=>{await api('requirements',{gpu:true});message('GPU enabled. Checking CUDA and body models…');}));
+$('pauseGpu').addEventListener('click',()=>action(async()=>message((await api('gpu/pause',{})).message)));
+$('closeSceneReview').addEventListener('click',()=>{$('sceneReview').hidden=true;$('sceneReviewFrame').removeAttribute('src');});
 async function poll(){try{await refresh();if($('adminStatus').textContent.startsWith('Connecting'))message('Local workstation connected. Import a video to begin.');}catch(error){message(error.message,true);}setTimeout(poll,1800);}poll();

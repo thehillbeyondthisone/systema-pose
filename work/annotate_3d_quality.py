@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def annotate_tracking_quality(scene, reference_path):
-    rows = [json.loads(line) for line in Path(reference_path).read_text(encoding='utf-8').splitlines()]
+    rows = reference_path if isinstance(reference_path, list) else [json.loads(line) for line in Path(reference_path).read_text(encoding='utf-8').splitlines()]
     assert len(rows) == len(scene['frames'])
     for frame, row in zip(scene['frames'], rows):
         observed = {p['track_id']: p for p in row['people'] if p['track_id'] > 0}
