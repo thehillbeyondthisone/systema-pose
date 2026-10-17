@@ -1,4 +1,4 @@
-"""Review and process the local video request queue without an instructor UI."""
+"""Command-line processing for the local student video request queue."""
 import argparse
 import datetime as dt
 import json

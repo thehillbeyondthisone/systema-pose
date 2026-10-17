@@ -12,9 +12,10 @@ import uuid
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 import onboarding
 import student_data
+import admin
 
 ROOT = Path(__file__).resolve().parent
 PROJECT = ROOT.parent
@@ -93,6 +94,10 @@ def clean_note(raw, lesson):
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*args,**kwargs):super().__init__(*args,directory=str(PUBLIC),**kwargs)
+    def read_project(self,lesson_id):
+        lesson=onboarding.read(lesson_id)
+        if lesson.get('adminPrivate') and not admin.local_request(self):raise ValueError('Unknown lesson.')
+        return lesson
     def student(self):
         if hasattr(self,'_student_id'):return self._student_id
         cookies=SimpleCookie()
@@ -109,7 +114,7 @@ class Handler(SimpleHTTPRequestHandler):
         project=query.get('project',[None])[0];snapshot_id=query.get('lesson',[None])[0]
         lesson_scope=student_data.scope(project,snapshot_id)
         if project:
-            lesson=onboarding.read(project)
+            lesson=self.read_project(project)
             if lesson['status']!='ready':raise ValueError('This lesson is still being prepared.')
         elif snapshot_id:
             path=PUBLISHED/snapshot_id/'lesson.json'
@@ -168,10 +173,24 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
     def translate_path(self,path):
         url=urlparse(path).path
+        if url in ('/admin','/admin/'):
+            return str(PUBLIC/'admin.html')
+        asset=re.fullmatch(r'/admin-assets/([a-z0-9]+(?:-[a-z0-9]+)*)/(source\.mp4|motion\.json|poster\.jpg|scene\.json)',url)
+        if asset and asset[1] in admin.saved()['staged']:
+            return str(admin.PROJECT/'site/clips'/asset[1]/asset[2])
+        if url.startswith('/admin-preview/'):
+            parts=url.strip('/').split('/')
+            if len(parts)>=2 and re.fullmatch(r'[a-f0-9]{32}',parts[1]):
+                root=(admin.DATA/'previews'/parts[1]).resolve()
+                target=root.joinpath(*parts[2:]).resolve()
+                if target.is_relative_to(root):return str(target)
+            return str(PUBLIC/'missing')
         if url=='/' and not urlparse(path).query:return str(PUBLIC/'onboarding.html')
         parts=url.strip('/').split('/')
         if len(parts)==3 and parts[0]=='lessons' and parts[2] in ['source.mp4','motion.json']:
-            try:return str(onboarding.folder(parts[1])/parts[2])
+            try:
+                self.read_project(parts[1])
+                return str(onboarding.folder(parts[1])/parts[2])
             except ValueError:return str(PUBLIC/'missing')
         if url=='/media/source-reference.mp4':return str(PROJECT/'outputs/pilot/source-reference.mp4')
         if url in ['/3d-pilot/scene.json','/3d-pilot/manifest.json']:
@@ -188,20 +207,48 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path=urlparse(self.path).path
         try:
+            if path.startswith(('/admin','/api/admin')):
+                if not admin.local_request(self):return self.send_json({'error':'Open the admin dashboard on this PC using http://127.0.0.1 and the server port.'},403)
+                if path=='/api/admin/state':return self.send_json(admin.state())
             if path=='/api/video-requests':
                 return self.send_json({'requests':[{k:v for k,v in r.items() if k!='studentId'} for r in student_data.requests(self.student())]})
             if path=='/api/annotations':
                 student,lesson_scope,_=self.annotation_context()
                 return self.send_json({'notes':student_data.notes(student,lesson_scope)})
-            if path=='/api/projects':return self.send_json({'lessons':[v for v in onboarding.library() if v['status']=='ready']})
-            if path.startswith('/api/projects/'):return self.send_json(onboarding.read(path.split('/')[-1]))
+            if path=='/api/projects':return self.send_json({'lessons':[v for v in onboarding.library() if v['status']=='ready' and (not v.get('adminPrivate') or admin.local_request(self))]})
+            if path.startswith('/api/projects/'):return self.send_json(self.read_project(path.split('/')[-1]))
             if path in ['/api/lesson','/lesson.json']:
                 lesson_id=parse_qs(urlparse(self.path).query).get('project',[None])[0]
-                return self.send_json(onboarding.read(lesson_id) if lesson_id else json.loads((DATA/'lesson.json').read_text(encoding='utf-8')))
+                return self.send_json(self.read_project(lesson_id) if lesson_id else json.loads((DATA/'lesson.json').read_text(encoding='utf-8')))
         except ValueError as failure:return self.send_json({'error':str(failure)},404)
         return super().do_GET()
     def do_POST(self):
         try:
+            path=urlparse(self.path).path
+            if path.startswith('/api/admin/'):
+                if not admin.local_request(self,write=True):
+                    self.close_connection=True
+                    return self.send_json({'error':'Use the local admin dashboard to make this change.'},403)
+                size=int(self.headers.get('Content-Length','0'))
+                if path=='/api/admin/upload':
+                    if not 0<size<=onboarding.MAX_UPLOAD:raise ValueError('Choose a video under 500 MB.')
+                    name=Path(unquote(self.headers.get('X-File-Name','video.mp4'))).name
+                    lesson=onboarding.upload(self.rfile,size,name,now());lesson['adminPrivate']=True
+                    onboarding.save(onboarding.folder(lesson['id'])/'lesson.json',lesson)
+                    return self.send_json(lesson,201)
+                limit=50*1024*1024 if path.endswith('/scene') else 1024*1024
+                if not 0<size<=limit:raise ValueError('Admin request is empty or too large.')
+                raw=json.loads(self.rfile.read(size))
+                if path=='/api/admin/prepare':
+                    onboarding.draft(raw['lessonId'],raw,now())
+                    return self.send_json(onboarding.generate(raw['lessonId']))
+                if path=='/api/admin/stage':return self.send_json(admin.stage(raw),202)
+                if path=='/api/admin/unstage':return self.send_json(admin.unstage(raw['clipId']))
+                if path=='/api/admin/preview':return self.send_json(admin.build_preview(),202)
+                if path=='/api/admin/publish':return self.send_json(admin.publish(raw),202)
+                match=re.fullmatch(r'/api/admin/clips/([a-z0-9]+(?:-[a-z0-9]+)*)/scene',path)
+                if match:return self.send_json(admin.attach_scene(match[1],raw))
+                return self.send_json({'error':'Unknown admin action.'},404)
             # Reject cross-origin browser writes; the local prototype has no hosted accounts.
             origin=self.headers.get('Origin')
             host=self.headers.get('Host','')
@@ -248,14 +295,20 @@ if __name__=='__main__':
     parser.add_argument('--lan',action='store_true',help='listen on all network interfaces for testing on other devices')
     parser.add_argument('--host',default='127.0.0.1',help='address to bind (default: 127.0.0.1)')
     parser.add_argument('--port',type=int,default=8770,help='TCP port (default: 8770)')
+    parser.add_argument('--admin',action='store_true',help='open the local video administration dashboard')
     args=parser.parse_args()
     host='0.0.0.0' if args.lan else args.host
     initialize()
     onboarding.recover()
     print(f'Systema teaching prototype: http://127.0.0.1:{args.port}/',flush=True)
+    print(f'Local video admin: http://127.0.0.1:{args.port}/admin',flush=True)
     if host=='0.0.0.0':
         address=lan_address()
         if address:print(f'LAN access: http://{address}:{args.port}/',flush=True)
         else:print(f'LAN access: http://<this-computer-ip>:{args.port}/',flush=True)
         print('Keep this window open. Press Ctrl+C to stop.',flush=True)
-    ThreadingHTTPServer((host,args.port),Handler).serve_forever()
+    httpd=ThreadingHTTPServer((host,args.port),Handler)
+    if args.admin:
+        import webbrowser
+        webbrowser.open(f'http://127.0.0.1:{args.port}/admin')
+    httpd.serve_forever()

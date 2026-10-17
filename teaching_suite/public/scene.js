@@ -7,8 +7,10 @@ import {FigureRig} from './figure-rig.js';
 import {StrikeCues,strikeConfidenceLabel} from './strike-cues.js';
 import {resolveStrikeLanding} from './strike-placement.js';
 import {ModelLibrary} from './model-library.js';
+import {ContactShadows} from './contact-shadows.js';
 let studioEnvironment=null;
 let studioLighting=null;
+let contactShadows=null;
 let modelLibrary=null, modelsRestoring=true;
 let refreshFigureChoices=()=>{};
 let strikeCues=null, teachingPreviewEnd=null, figureStorageKey='';
@@ -277,6 +279,7 @@ function showFrame(index){
     $('strikeEstimateIntensity').textContent=`Relative intensity ${nearestEstimate.intensity}/5 · ${strikeConfidenceLabel(nearestEstimate.confidence).toLowerCase()}`;
   }
   const people=motion.frames[frame].people;
+  contactShadows?.update(people,new Set([...objects].filter(([,object])=>object.group.visible).map(([id])=>id)));
   const gaps=people.filter(p=>p.sourceBoxInterpolated).length;
   const overlap=people.some(p=>p.overlappingSourceBoxes?.length);
   const missing=motion.people.length-people.length;
@@ -419,7 +422,7 @@ async function load(){
     if(site){
       siteLesson=await site.lesson();
       sourceStart=siteLesson.sourceStart;sourceEnd=siteLesson.sourceEnd;fps=siteLesson.fps;
-      frameCount=Math.ceil((sourceEnd-sourceStart)*fps);scrub.max=String(frameCount-1);
+      frameCount=Math.ceil((sourceEnd-sourceStart)*fps-1e-7);scrub.max=String(frameCount-1);
       document.querySelector('h1').textContent=siteLesson.title;
       document.querySelector('.lesson-heading .eyebrow').textContent=`${siteLesson.category.toUpperCase()} · 3D SCENE`;
       document.querySelectorAll('.lesson-return').forEach(link=>{link.href=site.link('lesson.html',siteLesson.id);});
@@ -455,6 +458,7 @@ async function load(){
     }catch{}
     const stage=$('orbitStage');world=new THREE.Scene();world.background=new THREE.Color('#142234');
     studioLighting=new StudioLighting(world);
+    contactShadows=new ContactShadows({world,motion});
     contactMarkers=new THREE.Group();contactMarkers.userData.figureOverlay=true;world.add(contactMarkers);
     renderer=new THREE.WebGLRenderer({antialias:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;

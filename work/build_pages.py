@@ -13,7 +13,7 @@ import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / 'teaching_suite' / 'public'
-ASSETS = ('custom-figure.js', 'model-library.js', 'figure-rig.js', 'strike-cues.js', 'strike-estimates.mjs', 'strike-placement.js', 'studio-environment.js', 'studio-lighting.js', 'studio-registration.mjs', 'app.js', 'style.css', 'annotations.css', 'views.css', 'scene.js',
+ASSETS = ('custom-figure.js', 'model-library.js', 'figure-rig.js', 'contact-shadows.js', 'strike-cues.js', 'strike-estimates.mjs', 'strike-placement.js', 'studio-environment.js', 'studio-lighting.js', 'studio-registration.mjs', 'app.js', 'style.css', 'annotations.css', 'views.css', 'scene.js',
           'scene.css', 'contact_geometry.mjs', 'site-data.js', 'library.js', 'library.css')
 
 
@@ -38,7 +38,7 @@ def check_timing(data):
         raise ValueError('Motion timing must be finite numbers')
     if not 0 <= start < end or not 0 < fps <= 240:
         raise ValueError('Invalid motion timing')
-    return math.ceil((end - start) * fps)
+    return math.ceil((end - start) * fps - 1e-7)
 
 
 def poster_svg(motion, people):

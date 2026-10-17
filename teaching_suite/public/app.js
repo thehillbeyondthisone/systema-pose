@@ -389,7 +389,7 @@
         $('participantCount').textContent = `${lesson.people.length} participants`;
         $('stage').style.aspectRatio = `${motion.width} / ${motion.height}`;
       }
-      frameCount = Math.ceil((motion.sourceEnd-motion.sourceStart)*motion.fps);
+      frameCount = Math.ceil((motion.sourceEnd-motion.sourceStart)*motion.fps-1e-7);
       frameMap = new Map(motion.frames.map((frame,index) => [lesson.schemaVersion === 2 ? frame.frame : index,frame]));
       document.querySelector('.time-row>span:last-child').textContent = `${motion.sourceEnd.toFixed(3)}s`;
       $('noteStart').min = String(motion.sourceStart); $('noteStart').max = String(motion.sourceEnd-1/motion.fps);

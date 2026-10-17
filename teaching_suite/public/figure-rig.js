@@ -112,7 +112,15 @@ export class FigureRig {
     const ellipsoid=(name,scale,offset=[0,0,0],kind='body',region=name)=>{
       const bone=this.indices.get(name),regionIndex=this.indices.get(region);
       const local=new THREE.Matrix4().compose(new THREE.Vector3(...offset),new THREE.Quaternion(),new THREE.Vector3(...scale));
-      append(new THREE.SphereGeometry(1,kind==='head'?24:14,kind==='head'?18:10),bone,kind,regionIndex,local);
+      const geometry=new THREE.SphereGeometry(1,kind==='head'?24:14,kind==='head'?18:10);
+      if(kind==='head'){
+        const vertices=geometry.attributes.position;
+        // A gently flattened front and rounded back give the faceless head a
+        // readable profile without inventing eyes, facial expression or gaze.
+        for(let i=0;i<vertices.count;i++)if(vertices.getZ(i)>0)vertices.setZ(i,Math.min(vertices.getZ(i),.76+.09*vertices.getY(i)));
+        geometry.computeVertexNormals();
+      }
+      append(geometry,bone,kind,regionIndex,local);
     };
     const limb=(start,end,radiusA,radiusB)=>{
       const a=this.indices.get(start),b=this.indices.get(end);if(a==null||b==null)return;
@@ -234,7 +242,9 @@ export class FigureRig {
     if(up.lengthSq()<EPS)up.copy(UP);up.normalize();
     right.addScaledVector(up,-right.dot(up));
     if(right.lengthSq()<EPS)right.set(1,0,0);right.normalize();
-    const forward=new THREE.Vector3().crossVectors(right,up).normalize();
+    // SMPL's anatomical left/right ordering has the opposite handedness to
+    // our authored rest mannequin. across × up faced away from both feet.
+    const forward=new THREE.Vector3().crossVectors(up,right).normalize();
     if(forward.lengthSq()<EPS)forward.copy(FORWARD);
     const ratios=[];
     for(const name of ['left_hip','right_hip','left_knee','right_knee','left_shoulder','right_shoulder']){
@@ -285,6 +295,7 @@ export class FigureRig {
     this.group.userData.figureRig.highlightJoint=this.highlightJoint;
     this.group.userData.figureRig.intensity=this.intensity;
     this.group.userData.figureRig.validJoints=valid;
+    this.group.userData.figureRig.facing=forward.toArray();
     return true;
   }
 

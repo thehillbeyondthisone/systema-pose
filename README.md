@@ -34,6 +34,10 @@ teacher to prepare. Notes and requests are saved on your computer.
 
 ## Add lessons or contribute
 
+Double-click `quickstart-admin.bat` for the local video dashboard. Import a video,
+choose passages, prepare 2D tracking, review, then preview and publish. 3D scenes
+come from the separate GPU reconstruction step and can be attached before publishing.
+
 See the [publishing guide](site/README.md) to add prepared clips, or the
 [workspace guide](teaching_suite/README.md) for local teaching and processing.
 Updates pushed to `main` automatically rebuild and publish the live library.

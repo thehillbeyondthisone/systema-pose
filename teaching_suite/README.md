@@ -32,6 +32,16 @@ Requests are saved as JSON under `teaching_suite/data/video-requests/`. Submissi
 
 ## Process the request queue
 
+For videos already saved on this workstation, double-click
+`quickstart-admin.bat` to open the local dashboard at
+`http://127.0.0.1:8771/admin`. It imports footage, prepares selected 2D passages,
+stages only reviewed clips, builds a public preview, and publishes through Git.
+Matching 3D scenes can be attached after the separate GPU reconstruction step;
+room calibration is not copied from the sample. See the
+[publishing workflow](../site/README.md#local-video-dashboard).
+
+The commands below remain an alternative for the student request queue.
+
 Run these commands from the project root, using the same Python interpreter as the server:
 
 ```powershell

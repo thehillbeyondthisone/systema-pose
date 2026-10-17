@@ -20,6 +20,41 @@ the script refuses to mix a new release with old files. `dist/` is ignored.
 
 ## Add a prepared clip
 
+### Local video dashboard
+
+Double-click `quickstart-admin.bat` on the workstation. It opens
+`http://127.0.0.1:8771/admin`. The admin page and its write API accept only
+loopback connections; they are excluded from the GitHub Pages build.
+
+1. **Import footage.** MP4, MOV, M4V or WebM, under 500 MB and two hours. The
+   original stays in the private local data directory.
+2. **Choose passages and prepare.** Select up to 12 non-overlapping passages,
+   90 seconds total. The existing worker generates 2D tracking and reports progress.
+3. **Review footage and motion.** Check participant identities and overlaps, then
+   approve the selected passages for public sharing.
+4. **Stage reviewed passages.** Each passage becomes a trimmed public clip with
+   its own video, tracking, poster, stable ID and original source time range.
+   Unselected footage, student notes and original uploads are excluded.
+   **Unstage** backs out before publication and preserves the exported files locally.
+5. **Optional 3D.** Download the exported processing video from its staged card.
+   Run the separate GPU reconstruction workflow, then attach its reviewed
+   `scene.json`. The video hash, times, frame count and participant IDs must match.
+   The dashboard does not infer XYZ from 2D or reuse the pilot's room calibration.
+   A different camera or room needs its own calibration before adding a splat.
+6. **Build and review the public preview.** This uses the actual Pages builder.
+7. **Publish reviewed clips.** The dashboard commits only the staged clip assets
+   and catalog, then pushes to `main` using the workstation's GitHub connection.
+   GitHub Actions deploys the update. Unrelated workspace changes and a stale
+   preview block publishing. The activity log distinguishes a successful push
+   from the subsequent Pages deployment.
+
+The dashboard uses the installed local runtime and model files; it does not
+download processing models or remote video links. Keep the server running while
+preparation or publication jobs are active. `manage_requests.py` remains available
+for requested videos and command-line processing.
+
+### Prepared files and manual publishing
+
 1. Process the video on the teacher workstation using the existing request
    workflow. Review participant tracking and skeleton alignment.
 2. Copy just its prepared `source.mp4` and `motion.json` into a new folder such
