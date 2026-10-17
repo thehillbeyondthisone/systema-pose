@@ -148,15 +148,42 @@ manifest are bundled in this fork. To rebuild after
 editing the PLY, rerun the preparation command. Viewing requires WebGL2.
 Spark 2.3.1 and its license are vendored, so viewing works without a CDN.
 
-**Studio environment → Align the studio** provides room translation, scale,
-tilt, turn and roll. **Pick three floor points** levels the selected floor to
-the reconstruction ground. Choose widely spaced points on the same floor.
-Alignment persists per studio and source-video hash in this browser and can
-be exported/imported as JSON. Initial placement is approximate: no footage
-camera calibration or scan-to-video correspondence was provided. The scan is
-a spatial reference; it does not retrack the footage, correct pose drift or
-establish physical collisions with walls and furniture. Check the footage
-when adjusting placement or interpreting motion.
+The room is calibrated to this footage using stationary scan landmarks,
+the source camera intrinsics, and the scan's floor plane. **Source camera**
+follows the fitted camera across all 360 frames with the same framing as the
+footage. Drag to leave that camera and inspect the room; **Reset** returns to
+it. The animated bodies are re-expressed through the calibrated camera, so
+their original source-image projections, bone lengths and within-frame
+contact geometry are preserved. The floor is aligned to Y=0.
+
+**Studio environment → Align the studio** remains available for manual
+adjustment. **Reset alignment** restores the fitted room. Browser-saved
+adjustments are tied to the calibration version so older approximate
+placements cannot override it. Export/import carries that version as well.
+
+The calibration record is `teaching_suite/public/studio/calibration.json`.
+It contains scan-to-world registration, inspected floor evidence, fitted
+source-camera anchors and reprojection residuals. One unstable camera fit at
+frame 290 was rejected and interpolated from adjacent anchors. Camera
+centers use `-Rcw.T @ Tcw`; the upstream reconstruction's exported `Twc` was
+inconsistent and is corrected in this scene.
+
+Scale is anchored to the existing reconstruction's model meters, without a
+measured ruler. Scan imperfections and estimated human anatomy, depth and
+overlap errors remain. The fitted landmark errors do not establish surveyed
+distance accuracy or verified physical contact with the room.
+
+To reapply this reviewed calibration to an untouched original scene:
+
+```powershell
+python work/apply_studio_calibration.py --source original-scene.json --calibration teaching_suite/public/studio/calibration.json --output outputs/3d-pilot/scene.json
+python work/verify_studio_calibration.py
+```
+
+The application script checks the exact original scene hash and uses only
+Python's standard library. An already calibrated scene cannot be applied a
+second time. `verify_studio_calibration.py --source original-scene.json`
+additionally checks that source projections and bone lengths are preserved.
 
 The static Pages build includes the compact scan for catalog lessons with an
 `environment` path. Prepare the asset before running `work/build_pages.py`.

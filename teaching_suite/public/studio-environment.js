@@ -22,9 +22,15 @@ export class StudioEnvironment {
       const config=await response.json();
       if(config.schemaVersion!==1||!config.asset||!validAlignment(config.alignment))throw Error('Invalid studio configuration.');
       this.config=config;
-      this.key=`systema-studio-v1:${this.motion.sourceSha256}:${config.id}`;
+      this.calibrationId=config.calibration?.id||null;
+      this.matched=Boolean(this.calibrationId&&this.calibrationId===this.motion.roomCalibration?.id);
+      this.key=`systema-studio-v2:${this.motion.sourceSha256}:${config.id}:${this.calibrationId||'unregistered'}`;
       this.alignment={...config.alignment};
-      try{const saved=JSON.parse(localStorage.getItem(this.key));if(validAlignment(saved))this.alignment=saved;}catch{}
+      try{
+        const saved=JSON.parse(localStorage.getItem(this.key));
+        if(this.matchesRecord(saved))this.alignment={...saved.alignment};
+      }catch{}
+      this.fill();this.updateCalibrationLabel();
       const {SparkRenderer,SplatMesh}=await import('./vendor/spark/spark.module.js');
       const assetUrl=new URL(config.asset,new URL(this.configUrl,location.href)).href;
       // Distinguish a missing local asset before starting the decoder worker.
@@ -38,7 +44,7 @@ export class StudioEnvironment {
       this.group.add(this.mesh);await this.mesh.initialized;
       this.ready=true;this.visible=$('studioVisible').checked;
       $('studioControls').disabled=false;this.apply();
-      this.status.textContent='Studio loaded · approximate placement. Align against the footage.';
+      this.status.textContent=this.readyMessage();
       this.status.dataset.state='ready';
       this.canvas.dataset.studioReady='true';
     }catch(error){
@@ -52,7 +58,7 @@ export class StudioEnvironment {
     for(const field of fields)$('studio-'+field).addEventListener('change',()=>{
       const next=Object.fromEntries(fields.map(key=>[key,Number($('studio-'+key).value)]));
       if(!validAlignment(next)){this.status.textContent='Use finite values within the alignment limits.';this.fill();return;}
-      this.alignment=next;this.cancelPick();this.apply();this.save();
+      this.alignment=next;this.cancelPick();this.apply();this.save();this.status.textContent='Custom alignment saved. Restore calibration to return to the footage match.';
     });
     $('studioVisible').addEventListener('change',()=>{
       this.visible=$('studioVisible').checked;this.cancelPick();this.apply();
@@ -62,7 +68,7 @@ export class StudioEnvironment {
     $('studioXray').addEventListener('change',()=>{this.xray=$('studioXray').checked;this.onChange();});
     $('studioReset').addEventListener('click',()=>{
       this.alignment={...this.config.alignment};this.cancelPick();this.apply();this.save();
-      this.status.textContent='Initial approximate alignment restored.';
+      this.status.textContent=this.matched?'Matched studio calibration restored.':'Initial studio alignment restored.';
     });
     $('studioRetry').addEventListener('click',()=>this.load());
     $('studioFloor').addEventListener('click',()=>{
@@ -77,7 +83,7 @@ export class StudioEnvironment {
       this.pickFloor(event);
     });
     $('studioExport').addEventListener('click',()=>{
-      const record={schemaVersion:1,studio:this.config.id,sourceSha256:this.motion.sourceSha256,alignment:this.alignment};
+      const record=this.record();
       const url=URL.createObjectURL(new Blob([JSON.stringify(record,null,2)+'\n'],{type:'application/json'}));
       const link=document.createElement('a');link.href=url;link.download='studio-alignment.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     });
@@ -85,10 +91,30 @@ export class StudioEnvironment {
       try{
         const file=event.target.files[0];if(!file)return;if(file.size>20000)throw Error('Alignment file is too large.');
         const value=JSON.parse(await file.text());
-        if(value.schemaVersion!==1||value.studio!==this.config.id||value.sourceSha256!==this.motion.sourceSha256||!validAlignment(value.alignment))throw Error('Alignment does not match this studio and lesson.');
-        this.alignment={...value.alignment};this.cancelPick();this.apply();this.save();this.status.textContent='Alignment imported. Compare it with the source footage.';
+        if(!this.matchesRecord(value))throw Error('Alignment does not match this studio calibration and lesson.');
+        this.alignment={...value.alignment};this.cancelPick();this.apply();this.save();this.status.textContent='Alignment imported for this studio calibration. Compare it with the footage.';
       }catch(error){this.status.textContent=error.message;}finally{event.target.value='';}
     });
+  }
+  record(){return {schemaVersion:2,studio:this.config.id,sourceSha256:this.motion.sourceSha256,calibrationId:this.calibrationId,alignment:{...this.alignment}};}
+  matchesRecord(value){
+    return Boolean(value&&[1,2].includes(value.schemaVersion)&&value.studio===this.config.id&&
+      value.sourceSha256===this.motion.sourceSha256&&(value.calibrationId||null)===this.calibrationId&&validAlignment(value.alignment));
+  }
+  readyMessage(){
+    if(!this.matched)return 'Studio loaded · alignment estimate. Compare it with the footage.';
+    const residuals=this.config.calibration.residualPixels;
+    const residual=typeof residuals==='number'?residuals:residuals?.medianAnchorRms;
+    return `Studio matched to footage${Number.isFinite(residual)?` · ${residual.toFixed(1)} px median fitted room landmark error`:''}. Figure scale remains a model estimate.`;
+  }
+  updateCalibrationLabel(){
+    const custom=fields.some(key=>Math.abs(this.alignment[key]-this.config.alignment[key])>1e-8);
+    $('studioBadge').textContent=custom?'Custom alignment':this.matched?'Matched to footage':'Alignment estimate';
+    $('studioBadge').classList.toggle('calibrated',this.matched&&!custom);
+    $('studioCalibrationHelp').textContent=this.matched
+      ? 'The studio and source camera are matched to room landmarks in the footage. Figure size and depth use model estimates; room dimensions have not been physically measured. Turn off Figures through walls to study occlusion.'
+      : 'The scan is fixed in 3D while the figures follow the reconstructed motion. Match the floor, room size and orientation against the footage. Turn off Figures through walls to study occlusion.';
+    $('studioReset').textContent=this.matched?'Restore calibration':'Reset alignment';
   }
   fill(){for(const key of fields)$('studio-'+key).value=String(Math.round(this.alignment[key]*10000)/10000);}
   apply(){
@@ -97,15 +123,16 @@ export class StudioEnvironment {
     this.group.visible=this.visible&&this.ready;
     if(this.mesh)this.mesh.opacity=Number($('studioOpacity').value);
     this.grid.visible=!this.visible||!this.ready||$('studioGrid').checked;
-    this.fill();this.onChange();
+    this.fill();this.updateCalibrationLabel();this.onChange();
   }
-  save(){try{localStorage.setItem(this.key,JSON.stringify(this.alignment));}catch{this.status.textContent='Browser storage is unavailable. Export alignment to keep it.';}}
+  save(){try{localStorage.setItem(this.key,JSON.stringify(this.record()));}catch{this.status.textContent='Browser storage is unavailable. Export alignment to keep it.';}}
   cancelPick(){
     this.picking=false;this.pickPoints=[];$('studioFloor').textContent='Pick three floor points';
     for(const child of [...this.markers.children]){child.geometry.dispose();child.material.dispose();child.removeFromParent();}
   }
   pickFloor(event){
     const rect=this.canvas.getBoundingClientRect();
+    if(!rect.width||!rect.height||event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)return;
     const pointer=new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);
     const ray=new THREE.Raycaster();ray.setFromCamera(pointer,this.camera);ray.near=.25;ray.far=100;this.world.updateMatrixWorld(true);
     const hit=ray.intersectObject(this.mesh,false)[0];

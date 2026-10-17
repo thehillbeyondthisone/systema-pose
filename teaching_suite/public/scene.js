@@ -9,6 +9,56 @@ const palette=['#ffc45f','#7bc7ed','#bda4ee','#94d8b8','#f29d91','#dfc688'];
 let motion=null, frame=0, renderer, world, camera, orbit, objects=new Map(), center, extent=4;
 let contactMarkers, markerPool=[], contactSettings={enabled:false,radius:0.02};
 let displayedFrameSignature='';
+let sourceFollowing=false;
+const sourceAspect=16/9;
+const sourceRotation=new THREE.Matrix4();
+function hasSourceCamera(){
+  const data=motion?.camera;
+  return Boolean(motion?.roomCalibration?.id&&data?.Rcw?.length===frameCount&&data?.Tcw?.length===frameCount&&
+    Number.isFinite(data.img_focal)&&data.img_focal>0&&data.img_center?.length===2&&data.img_center.every(value=>Number.isFinite(value)&&value>0));
+}
+function setCameraButtons(name){
+  document.querySelectorAll('[data-camera]').forEach(button=>{
+    const active=button.dataset.camera===name;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));
+  });
+  $('orbitStage').dataset.cameraMode=name||'orbit';
+}
+function updateCameraProjection(){
+  camera.aspect=sourceAspect;
+  if(sourceFollowing&&hasSourceCamera()){
+    const data=motion.camera,[cx,cy]=data.img_center,focal=data.img_focal;
+    const width=data.imageWidth||data.img_width||data.width||cx*2,height=data.imageHeight||data.img_height||data.height||cy*2;
+    camera.fov=THREE.MathUtils.radToDeg(2*Math.atan(height/(2*focal)));
+    camera.updateProjectionMatrix();
+    // Preserve the reconstruction intrinsics, including a noncentral principal point.
+    const projection=camera.projectionMatrix.elements;
+    projection[0]=2*focal/width;projection[5]=2*focal/height;
+    projection[8]=1-2*cx/width;projection[9]=2*cy/height-1;
+    camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+  }else camera.updateProjectionMatrix();
+}
+function followSourceCamera(){
+  if(!sourceFollowing||!hasSourceCamera())return;
+  const r=motion.camera.Rcw[frame],t=motion.camera.Tcw[frame];
+  // Rcw maps world coordinates to the CV camera (+Y down, +Z forward).
+  // Three uses +Y up and looks along -Z, so its pose is Rcw.T * diag(1,-1,-1).
+  camera.position.set(-(r[0][0]*t[0]+r[1][0]*t[1]+r[2][0]*t[2]),
+    -(r[0][1]*t[0]+r[1][1]*t[1]+r[2][1]*t[2]),-(r[0][2]*t[0]+r[1][2]*t[1]+r[2][2]*t[2]));
+  sourceRotation.set(r[0][0],-r[1][0],-r[2][0],0,r[0][1],-r[1][1],-r[2][1],0,
+    r[0][2],-r[1][2],-r[2][2],0,0,0,0,1);
+  camera.up.set(0,1,0);camera.quaternion.setFromRotationMatrix(sourceRotation);
+  camera.updateMatrixWorld(true);updateCameraProjection();
+  orbit.target.copy(camera.position).add(new THREE.Vector3(0,0,-Math.max(2,extent/2)).applyQuaternion(camera.quaternion));
+  renderer.domElement.dataset.sourceCameraFrame=String(frame);
+}
+function resizeSceneCanvas(){
+  const stage=$('orbitStage'),width=stage.clientWidth,height=stage.clientHeight;
+  if(!renderer||!width||!height)return;
+  const fittedWidth=Math.min(width,height*sourceAspect),fittedHeight=fittedWidth/sourceAspect;
+  renderer.setSize(Math.max(1,Math.round(fittedWidth)),Math.max(1,Math.round(fittedHeight)),false);
+  renderer.domElement.style.width=`${fittedWidth}px`;renderer.domElement.style.height=`${fittedHeight}px`;
+  updateCameraProjection();
+}
 const contactStorageKey='systema-contact-effects-v1';
 try{
   const saved=JSON.parse(localStorage.getItem(contactStorageKey));
@@ -78,6 +128,7 @@ function showFrame(index){
   $('sceneTime').textContent=`${(sourceStart+frame/fps).toFixed(3)}s`;
   scrub.setAttribute('aria-valuetext',`${(sourceStart+frame/fps).toFixed(3)} source seconds`);
   if(!motion)return;
+  followSourceCamera();
   const signature=JSON.stringify([frame,contactSettings,studioEnvironment?.ready&&studioEnvironment?.visible,studioEnvironment?.xray,[...objects.values()].map(object=>object.checkbox.checked)]);
   if(signature===displayedFrameSignature)return;
   displayedFrameSignature=signature;
@@ -209,6 +260,12 @@ document.addEventListener('keydown',event=>{
 function sync(){if(!video.paused)showFrame(Math.floor(video.currentTime*fps+0.001));requestAnimationFrame(sync);}sync();
 
 function preset(name){
+  if(name==='source'&&hasSourceCamera()){
+    // Flush an unfinished orbit gesture before applying the exact tracked pose.
+    const damping=orbit.enableDamping;orbit.enableDamping=false;orbit.update();orbit.enableDamping=damping;
+    sourceFollowing=true;followSourceCamera();setCameraButtons('source');return;
+  }
+  sourceFollowing=false;camera.fov=48;updateCameraProjection();
   const bounds=new THREE.Box3();
   for(const person of motion.frames[frame].people)for(const xyz of person.xyz)bounds.expandByPoint(new THREE.Vector3(...xyz));
   const focus=bounds.isEmpty()?center:bounds.getCenter(new THREE.Vector3());
@@ -219,9 +276,7 @@ function preset(name){
   else if(name==='overhead'){camera.position.copy(focus).add(new THREE.Vector3(0,distance,0.001));camera.up.set(0,0,-1);}
   else camera.position.copy(focus).add(new THREE.Vector3(0,0.2*size,distance));
   camera.lookAt(focus);orbit.update();
-  document.querySelectorAll('[data-camera]').forEach(button=>{
-    const active=button.dataset.camera===name;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));
-  });
+  setCameraButtons(name);
 }
 function validate(data){
   if(data.coordinateSpace!=='world-3d'||data.units!=='model-meters'||data.upAxis!=='y')throw Error('Unsupported scene coordinates.');
@@ -269,7 +324,7 @@ async function load(){
     renderer=new THREE.WebGLRenderer({antialias:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     camera=new THREE.PerspectiveCamera(48,1,0.01,1000);stage.append(renderer.domElement);
     orbit=new OrbitControls(camera,renderer.domElement);orbit.enableDamping=true;
-    orbit.addEventListener('start',()=>document.querySelectorAll('[data-camera]').forEach(button=>{button.classList.remove('active');button.setAttribute('aria-pressed','false');}));
+    orbit.addEventListener('start',()=>{sourceFollowing=false;setCameraButtons(null);});
     const bounds=new THREE.Box3();
     for(const f of motion.frames)for(const p of f.people)for(const xyz of p.xyz)bounds.expandByPoint(new THREE.Vector3(...xyz));
     if(bounds.isEmpty())throw Error('Scene contains no visible joints.');
@@ -297,15 +352,17 @@ async function load(){
       label.append(checkbox,key,document.createTextNode(person.name));$('scenePeople').append(label);
       checkbox.addEventListener('change',()=>showFrame(frame));objects.set(String(person.id),{group,bones,joints,checkbox,solid,solidBones,solidJoints,color});
     }
-    new ResizeObserver(()=>{const width=stage.clientWidth,height=stage.clientHeight;if(!width||!height)return;renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();}).observe(stage);
+    new ResizeObserver(resizeSceneCanvas).observe(stage);resizeSceneCanvas();
     $('emptyScene').hidden=true;
-    for(const button of document.querySelectorAll('[data-camera]')){button.disabled=false;button.addEventListener('click',()=>preset(button.dataset.camera));}
-    $('resetCamera').disabled=false;$('resetCamera').addEventListener('click',()=>preset('front'));
-    preset('front');showFrame(frame);
-    $('sceneStatus').textContent='3D estimates ready. Compare depth and contact with the footage.';$('sceneStatus').classList.add('ready');
+    for(const button of document.querySelectorAll('[data-camera]')){
+      button.disabled=button.dataset.camera==='source'&&!hasSourceCamera();button.addEventListener('click',()=>preset(button.dataset.camera));
+    }
+    $('resetCamera').disabled=false;$('resetCamera').addEventListener('click',()=>preset(hasSourceCamera()?'source':'front'));
+    preset(hasSourceCamera()?'source':'front');showFrame(frame);
+    $('sceneStatus').textContent=hasSourceCamera()?'Studio camera matched to the footage. Figure depth and scale remain estimates.':'3D estimates ready. Compare depth and contact with the footage.';$('sceneStatus').classList.add('ready');
     if(video.error)showVideoError();
     applySceneView(sceneView);
-    function render(){orbit.update();renderer.render(world,camera);requestAnimationFrame(render);}render();
+    function render(){if(!sourceFollowing)orbit.update();renderer.render(world,camera);requestAnimationFrame(render);}render();
     const configUrl=site?siteLesson.environment:'studio/environment.json';
     if(configUrl){
       studioEnvironment=new StudioEnvironment({world,renderer,camera,orbit,canvas:renderer.domElement,grid,motion,configUrl,onChange:()=>showFrame(frame)});

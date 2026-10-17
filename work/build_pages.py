@@ -146,7 +146,7 @@ def build(output, config_path):
             if scene['sourceSha256'] != sha or check_timing(scene) != frame_count or any(scene[key] != motion[key] for key in ('sourceStart', 'sourceEnd', 'fps')):
                 raise ValueError('3D scene does not match the video and 2D timing')
             scene_keys = ('schemaVersion', 'coordinateSpace', 'units', 'upAxis', 'scaleVerified', 'reviewed',
-                          'fps', 'sourceStart', 'sourceEnd', 'sourceSha256', 'jointNames', 'edges', 'people', 'frames', 'qualityAnnotation')
+                          'fps', 'sourceStart', 'sourceEnd', 'sourceSha256', 'jointNames', 'edges', 'people', 'frames', 'qualityAnnotation', 'camera', 'roomCalibration')
             write_json(folder / 'scene.json', {key: scene[key] for key in scene_keys if key in scene})
             write_json(folder / 'manifest.json', {'sha256': sha, 'reconstruction': {'expectedParticipants': len(scene['people'])}})
             lesson.update(scene=prefix + 'scene.json', manifest=prefix + 'manifest.json')

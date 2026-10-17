@@ -32,7 +32,8 @@
         <div class="view-toolbar">
           <strong>Studio + movement</strong>
           <div class="controls" role="group" aria-label="Camera angle">
-            <button data-camera="front" aria-pressed="true" disabled>Front</button>
+            <button data-camera="source" aria-pressed="false" disabled>Source camera</button>
+            <button data-camera="front" aria-pressed="false" disabled>Front</button>
             <button data-camera="side" aria-pressed="false" disabled>Side</button>
             <button data-camera="overhead" aria-pressed="false" disabled>Overhead</button>
             <button id="resetCamera" disabled>Reset</button>
@@ -69,7 +70,7 @@
     <section id="sceneDetailsPanel" class="scene-details-panel" aria-label="Scene options and estimates">
       <div class="participant-row"><span>Show people</span><div id="scenePeople" class="participant-buttons"></div></div>
       <details id="studioDetails" class="studio-disclosure" open>
-        <summary>Studio environment <span class="studio-badge">Alignment estimate</span></summary>
+        <summary>Studio environment <span id="studioBadge" class="studio-badge">Alignment estimate</span></summary>
         <p id="studioStatus" role="status">Waiting for motion…</p>
         <button id="studioRetry" hidden>Retry studio</button>
         <fieldset id="studioControls" disabled>
@@ -80,25 +81,25 @@
             <label class="check"><input id="studioGrid" type="checkbox">Ground guide</label>
             <label>Studio opacity <input id="studioOpacity" type="range" min="0.1" max="1" step="0.05" value="0.85"></label>
           </div>
-          <p class="studio-help">The scan is fixed in 3D while the figures follow the reconstructed motion. Match the floor, room size and orientation against the footage. Initial placement is approximate. Turn off Figures through walls to study occlusion.</p>
+          <p id="studioCalibrationHelp" class="studio-help">The studio is matched to room landmarks in the footage. Figure size and depth use model estimates; room dimensions have not been physically measured. Turn off Figures through walls to study occlusion.</p>
           <details class="studio-alignment">
-            <summary>Align the studio</summary>
+            <summary>Adjust studio alignment</summary>
             <div class="studio-fields">
-              <label>Left / right<input id="studio-x" type="number" min="-1000" max="1000" step="0.05" value="2"></label>
-              <label>Floor height<input id="studio-y" type="number" min="-1000" max="1000" step="0.01" value="1.8"></label>
-              <label>Forward / back<input id="studio-z" type="number" min="-1000" max="1000" step="0.05" value="2"></label>
-              <label>Tilt (degrees)<input id="studio-pitch" type="number" min="-360" max="360" step="1" value="180"></label>
-              <label>Turn (degrees)<input id="studio-yaw" type="number" min="-360" max="360" step="1" value="0"></label>
-              <label>Roll (degrees)<input id="studio-roll" type="number" min="-360" max="360" step="1" value="0"></label>
-              <label>Room scale<input id="studio-scale" type="number" min="0.01" max="100" step="0.01" value="1"></label>
+              <label>Left / right<input id="studio-x" type="number" min="-1000" max="1000" step="0.05"></label>
+              <label>Floor height<input id="studio-y" type="number" min="-1000" max="1000" step="0.01"></label>
+              <label>Forward / back<input id="studio-z" type="number" min="-1000" max="1000" step="0.05"></label>
+              <label>Tilt (degrees)<input id="studio-pitch" type="number" min="-360" max="360" step="1"></label>
+              <label>Turn (degrees)<input id="studio-yaw" type="number" min="-360" max="360" step="1"></label>
+              <label>Roll (degrees)<input id="studio-roll" type="number" min="-360" max="360" step="1"></label>
+              <label>Room scale<input id="studio-scale" type="number" min="0.01" max="100" step="0.01"></label>
             </div>
             <div class="studio-actions">
               <button id="studioFloor">Pick three floor points</button>
-              <button id="studioReset">Reset alignment</button>
+              <button id="studioReset">Restore calibration</button>
               <button id="studioExport">Export alignment</button>
               <label class="file-button">Import alignment<input id="studioImport" type="file" accept="application/json,.json" class="studio-file"></label>
             </div>
-            <p class="studio-help">Alignment is remembered in this browser for this lesson. Export it to share or back it up. The scan does not add new tracking measurements or verify contact with the room.</p>
+            <p class="studio-help">Adjustments are remembered for this studio calibration and lesson. Restore calibration to return to the footage match. Export an adjustment to share or back it up; body contact remains an estimate.</p>
           </details>
         </fieldset>
       </details>
@@ -115,7 +116,7 @@
         </section>
       </details>
       <div class="viewer-footer"><span class="estimate-mark">3D estimates</span><span id="frameQuality">Compare depth and contact with the footage.</span></div>
-      <p id="orbitHelp" class="scene-help">Drag to orbit · Scroll or pinch to zoom · Right-drag or two fingers to pan.</p>
+      <p id="orbitHelp" class="scene-help">Source camera follows the footage. Drag to orbit · Scroll or pinch to zoom · Reset returns to the source camera.</p>
     </section>
   </main>
 </body>

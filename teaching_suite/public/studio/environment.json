@@ -3,14 +3,24 @@
   "id": "martial-studio-c2e7330f",
   "title": "Martial Arts Studio - Best Reviewed",
   "asset": "studio.splat",
-  "registration": "approximate; manual floor and footage alignment required",
+  "registration": "calibrated to source footage",
   "alignment": {
-    "x": 2,
-    "y": 1.8,
-    "z": 2,
-    "pitch": 180,
-    "yaw": 0,
-    "roll": 0,
-    "scale": 1
+    "x": -1.390918802300626,
+    "y": 1.3659544014581846,
+    "z": 0.7510952982350123,
+    "yaw": 162.99173093490666,
+    "pitch": 0.9562742873788692,
+    "roll": 179.58599162562038,
+    "scale": 0.7772144527710009
+  },
+  "calibration": {
+    "id": "studio-landmarks-v2",
+    "method": "Gaussian scan landmarks matched to stationary footage features; robust PnP source-camera poses; floor leveling; per-frame camera stabilization",
+    "scaleBasis": "Existing reconstruction model meters, anchored to the authoritative frame-0 source-camera height. Physical scale is unmeasured.",
+    "residualPixels": {
+      "medianAnchorRms": 2.9771227883462013,
+      "maxAnchorRms": 3.595866391545733
+    },
+    "sourceSha256": "c827366d700bf720bc5e83a4292c5606cc9806fa5eee3955d2a72b92aa1a69f9"
   }
 }
