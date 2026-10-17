@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "source": "Martial Arts Studio - Best Reviewed.ply",
+  "sourceSha256": "7c86b2a438ba3a360a5492be4efedff593e60c2199b5286d5689941ac797cd45",
+  "inputSplats": 674953,
+  "splats": 674666,
+  "bytes": 21589312,
+  "format": "splat",
+  "color": "SH degree 0; higher-order view-dependent color omitted",
+  "preserves": [
+    "centers",
+    "anisotropic scales",
+    "rotation",
+    "opacity"
+  ]
+}

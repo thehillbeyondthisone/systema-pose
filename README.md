@@ -124,3 +124,47 @@ These checks use emulated device sizes. They do not
 establish real iPad Safari compatibility or pose accuracy. Depth, metric scale,
 identity tracking during overlap, and contact remain estimates; compare the
 skeleton with the source footage when interpreting movement.
+
+## Studio Gaussian splat fork
+
+This version places the animated 3D stick figures inside the scanned martial
+arts studio. Open **Explore in 3D** from the sample lesson. Playback, source
+audio, participant visibility and contact effects use the existing motion data.
+The studio stays fixed when frames change and shares the orbit camera.
+
+Keep `Martial Arts Studio - Best Reviewed.ply` in the repository root, or set
+`SYSTEMA_STUDIO_PLY` to its location. The local server prepares a compact scan
+on first launch. To prepare it explicitly with Python 3:
+
+```powershell
+python work/prepare_studio.py
+```
+
+The derived `teaching_suite/public/studio/studio.splat` uses 32 bytes per
+Gaussian, retaining centers, anisotropic scale, rotation and opacity. It uses
+SH degree-0 color; higher-order view-dependent color is omitted. The source
+PLY stays local and is excluded from Git. The compact scan and conversion
+manifest are bundled in this fork. To rebuild after
+editing the PLY, rerun the preparation command. Viewing requires WebGL2.
+Spark 2.3.1 and its license are vendored, so viewing works without a CDN.
+
+**Studio environment → Align the studio** provides room translation, scale,
+tilt, turn and roll. **Pick three floor points** levels the selected floor to
+the reconstruction ground. Choose widely spaced points on the same floor.
+Alignment persists per studio and source-video hash in this browser and can
+be exported/imported as JSON. Initial placement is approximate: no footage
+camera calibration or scan-to-video correspondence was provided. The scan is
+a spatial reference; it does not retrack the footage, correct pose drift or
+establish physical collisions with walls and furniture. Check the footage
+when adjusting placement or interpreting motion.
+
+The static Pages build includes the compact scan for catalog lessons with an
+`environment` path. Prepare the asset before running `work/build_pages.py`.
+It resolves paths correctly under a repository subpath. New lessons need
+their own room registration; unconfigured lessons retain the grid scene.
+
+Verification: `node work/verify_studio_environment.cjs` checks local scan
+loading, synchronized seeking, registration persistence, import/export,
+three-point floor picking, contact effects, responsive layouts and recovery
+from a missing scan. Point `SYSTEMA_TEST_URL` at a local server (default port
+8773). Reports and screenshots are saved under `outputs/studio-validation/`.

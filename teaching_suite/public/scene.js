@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import {OrbitControls} from './vendor/three/OrbitControls.js';
 import {findBoneContacts} from './contact_geometry.mjs';
+import {StudioEnvironment} from './studio-environment.js';
+let studioEnvironment=null;
 
 const $=id=>document.getElementById(id), video=$('sceneVideo'), scrub=$('sceneScrub');
 const palette=['#ffc45f','#7bc7ed','#bda4ee','#94d8b8','#f29d91','#dfc688'];
@@ -76,7 +78,7 @@ function showFrame(index){
   $('sceneTime').textContent=`${(sourceStart+frame/fps).toFixed(3)}s`;
   scrub.setAttribute('aria-valuetext',`${(sourceStart+frame/fps).toFixed(3)} source seconds`);
   if(!motion)return;
-  const signature=JSON.stringify([frame,contactSettings,[...objects.values()].map(object=>object.checkbox.checked)]);
+  const signature=JSON.stringify([frame,contactSettings,studioEnvironment?.ready&&studioEnvironment?.visible,studioEnvironment?.xray,[...objects.values()].map(object=>object.checkbox.checked)]);
   if(signature===displayedFrameSignature)return;
   displayedFrameSignature=signature;
   for(const object of objects.values())object.group.visible=false;
@@ -93,19 +95,25 @@ function showFrame(index){
     object.joints.geometry.attributes.position.array.set(person.xyz.flat());
     object.joints.geometry.attributes.position.needsUpdate=true;
     object.joints.geometry.computeBoundingSphere();
-    object.bones.visible=!contactSettings.enabled;object.joints.visible=!contactSettings.enabled;
-    object.solid.visible=contactSettings.enabled;
+    const solidVisible=contactSettings.enabled||Boolean(studioEnvironment?.ready&&studioEnvironment?.visible);
+    object.bones.visible=!solidVisible;object.joints.visible=!solidVisible;
+    object.solid.visible=solidVisible;
+    const radius=contactSettings.enabled?contactSettings.radius:.014;
+    const xray=studioEnvironment?.ready&&studioEnvironment?.visible&&studioEnvironment?.xray;
+    for(const mesh of [...object.solidBones,...object.solidJoints]){
+      mesh.renderOrder=xray?1000:0;mesh.material.depthTest=!xray;mesh.material.depthWrite=!xray;
+    }
     for(let bone=0;bone<motion.edges.length;bone++){
       const [a,b]=motion.edges[bone], start=new THREE.Vector3(...person.xyz[a]), end=new THREE.Vector3(...person.xyz[b]);
       const delta=end.clone().sub(start), mesh=object.solidBones[bone], length=delta.length();
       mesh.position.copy(start).add(end).multiplyScalar(.5);
-      mesh.scale.set(contactSettings.radius,length,contactSettings.radius);
+      mesh.scale.set(radius,length,radius);
       mesh.visible=length>1e-8;
       if(mesh.visible)mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.divideScalar(length));
       mesh.material.color.set(object.color);mesh.material.opacity=opacity;
     }
     person.xyz.forEach((xyz,joint)=>{
-      const mesh=object.solidJoints[joint];mesh.position.set(...xyz);mesh.scale.setScalar(contactSettings.radius);
+      const mesh=object.solidJoints[joint];mesh.position.set(...xyz);mesh.scale.setScalar(radius);
       mesh.material.color.set(object.color);mesh.material.opacity=opacity;
     });
   }
@@ -142,7 +150,7 @@ function showContacts(){
       const marker=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),new THREE.MeshBasicMaterial({color:'#ffad42',transparent:true,opacity:.45,depthWrite:false}));
       contactMarkers.add(marker);markerPool.push(marker);
     }
-    const marker=markerPool[index];marker.visible=true;marker.position.set(...contact.point);marker.scale.setScalar(contactSettings.radius*1.8);
+    const marker=markerPool[index];marker.renderOrder=studioEnvironment?.xray?1001:0;marker.material.depthTest=!(studioEnvironment?.ready&&studioEnvironment?.visible&&studioEnvironment?.xray);marker.visible=true;marker.position.set(...contact.point);marker.scale.setScalar(contactSettings.radius*1.8);
   });
   for(const [pair,count] of pairs){
     const names=pair.split(':').map(id=>motion.people.find(person=>String(person.id)===id).name);
@@ -258,7 +266,7 @@ async function load(){
     motion=data;
     const stage=$('orbitStage');world=new THREE.Scene();world.background=new THREE.Color('#142234');
     contactMarkers=new THREE.Group();world.add(contactMarkers);
-    renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    renderer=new THREE.WebGLRenderer({antialias:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     camera=new THREE.PerspectiveCamera(48,1,0.01,1000);stage.append(renderer.domElement);
     orbit=new OrbitControls(camera,renderer.domElement);orbit.enableDamping=true;
     orbit.addEventListener('start',()=>document.querySelectorAll('[data-camera]').forEach(button=>{button.classList.remove('active');button.setAttribute('aria-pressed','false');}));
@@ -298,6 +306,13 @@ async function load(){
     if(video.error)showVideoError();
     applySceneView(sceneView);
     function render(){orbit.update();renderer.render(world,camera);requestAnimationFrame(render);}render();
+    const configUrl=site?siteLesson.environment:'studio/environment.json';
+    if(configUrl){
+      studioEnvironment=new StudioEnvironment({world,renderer,camera,orbit,canvas:renderer.domElement,grid,motion,configUrl,onChange:()=>showFrame(frame)});
+    }else{
+      $('studioStatus').textContent='This lesson has no registered studio scan.';
+      $('studioRetry').hidden=true;
+    }
   }catch(error){motion=null;$('sceneStatus').textContent=`Scene unavailable: ${error.message}`;$('emptyScene').hidden=false;sceneUnavailable();}
 }
 load();

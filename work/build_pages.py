@@ -13,7 +13,7 @@ import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / 'teaching_suite' / 'public'
-ASSETS = ('app.js', 'style.css', 'annotations.css', 'views.css', 'scene.js',
+ASSETS = ('studio-environment.js', 'studio-registration.mjs', 'app.js', 'style.css', 'annotations.css', 'views.css', 'scene.js',
           'scene.css', 'contact_geometry.mjs', 'site-data.js', 'library.js', 'library.css')
 
 
@@ -150,6 +150,19 @@ def build(output, config_path):
             write_json(folder / 'scene.json', {key: scene[key] for key in scene_keys if key in scene})
             write_json(folder / 'manifest.json', {'sha256': sha, 'reconstruction': {'expectedParticipants': len(scene['people'])}})
             lesson.update(scene=prefix + 'scene.json', manifest=prefix + 'manifest.json')
+            if item.get('environment'):
+                environment_path=asset_path(item['environment'])
+                environment=read_json(environment_path)
+                studio_asset=(environment_path.parent/environment['asset']).resolve()
+                if not studio_asset.is_relative_to(ROOT.resolve()) or not studio_asset.is_file():
+                    raise ValueError('Prepare the studio scan with work/prepare_studio.py before building')
+                if studio_asset.suffix != '.splat':
+                    raise ValueError('The static studio viewer expects a compact .splat asset')
+                shutil.copyfile(studio_asset,folder/'studio.splat')
+                environment['asset']='studio.splat'
+                write_json(folder/'environment.json',environment)
+                lesson['environment']=prefix+'environment.json'
+
         write_json(folder / 'lesson.json', lesson)
         entries.append({key: item[key] for key in ('id', 'title', 'description', 'category', 'tags')} |
                        {'lesson': prefix + 'lesson.json', 'duration': motion['sourceEnd'] - motion['sourceStart'],

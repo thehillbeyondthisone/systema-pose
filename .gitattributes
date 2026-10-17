@@ -17,3 +17,6 @@
 *.wav binary
 *.m4a binary
 *.zip binary
+
+*.splat binary
+*.ply binary
