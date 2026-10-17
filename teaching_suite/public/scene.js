@@ -3,12 +3,14 @@ import {OrbitControls} from './vendor/three/OrbitControls.js';
 import {findBoneContacts} from './contact_geometry.mjs';
 import {StudioEnvironment} from './studio-environment.js';
 import {FigureRig} from './figure-rig.js';
-import {StrikeCues} from './strike-cues.js';
+import {StrikeCues,strikeConfidenceLabel} from './strike-cues.js';
+import {resolveStrikeLanding} from './strike-placement.js';
 import {ModelLibrary} from './model-library.js';
 let studioEnvironment=null;
 let modelLibrary=null, modelsRestoring=true;
 let refreshFigureChoices=()=>{};
 let strikeCues=null, teachingPreviewEnd=null, figureStorageKey='';
+let strikeAnchorsReady=false;
 const figureStyles={skeleton:'Line skeleton',bones:'Solid skeleton',mannequin:'Rigged mannequin',dummy:'Training dummy'};
 let figureSettings={defaultStyle:'mannequin',participants:{}};
 const isModelStyle=value=>typeof value==='string'&&/^model:[a-zA-Z0-9_-]{1,100}$/.test(value);
@@ -22,6 +24,31 @@ let motion=null, frame=0, renderer, world, camera, orbit, objects=new Map(), cen
 let contactMarkers, markerPool=[], contactSettings={enabled:false,radius:0.02};
 let displayedFrameSignature='';
 let sourceFollowing=false;
+// Keep normal depth testing within the characters. Drawing the foreground in
+// a second pass lets it show through the room without turning overlapping body
+// surfaces into a camera-dependent stack of transparent meshes.
+function renderSceneFrame(){
+  if(!(studioEnvironment?.ready&&studioEnvironment?.visible&&studioEnvironment?.xray)){
+    renderer.render(world,camera);return;
+  }
+  const foreground=world.children.filter(child=>child.userData.figureOverlay);
+  const foregroundVisibility=foreground.map(child=>child.visible);
+  const environment=world.children.filter(child=>!child.isLight&&!child.userData.figureOverlay);
+  const environmentVisibility=environment.map(child=>child.visible);
+  const background=world.background,autoClear=renderer.autoClear;
+  try{
+    foreground.forEach(child=>{child.visible=false;});
+    renderer.render(world,camera);
+    foreground.forEach((child,index)=>{child.visible=foregroundVisibility[index];});
+    environment.forEach(child=>{child.visible=false;});
+    renderer.autoClear=false;world.background=null;renderer.clearDepth();
+    renderer.render(world,camera);
+  }finally{
+    foreground.forEach((child,index)=>{child.visible=foregroundVisibility[index];});
+    environment.forEach((child,index)=>{child.visible=environmentVisibility[index];});
+    renderer.autoClear=autoClear;world.background=background;
+  }
+}
 const sourceAspect=16/9;
 const sourceRotation=new THREE.Matrix4();
 function hasSourceCamera(){
@@ -149,12 +176,16 @@ function showFrame(index){
   if(signature===displayedFrameSignature)return;
   displayedFrameSignature=signature;
   const xray=Boolean(studioEnvironment?.ready&&studioEnvironment?.visible&&studioEnvironment?.xray);
+  strikeAnchorsReady=false;
   strikeCues?.update(frame,{visibleIds:new Set([...objects].filter(([,object])=>object.checkbox.checked).map(([id])=>id)),xray});
   for(const object of objects.values())object.group.visible=false;
   for(const person of motion.frames[frame].people){
     const object=objects.get(String(person.id));if(!object)continue;
     object.group.visible=object.checkbox.checked;
-    const opacity=person.sourceBoxInterpolated ? .35 : person.overlappingSourceBoxes?.length ? .65 : 1;
+    // Tracking confidence belongs in the quality label. Abruptly changing the
+    // skin's opacity on overlap flags made complete figures blink and switch
+    // between Three's opaque/transparent render queues during playback.
+    const opacity=1;
     object.bones.material.opacity=opacity;object.joints.material.opacity=opacity;
     const positions=[];
     for(const [a,b] of motion.edges)positions.push(...person.xyz[a],...person.xyz[b]);
@@ -192,18 +223,18 @@ function showFrame(index){
     const highlight=strikeCues?.getHighlight(person.id);
     if(builtinRig){
       object.rig.setStyle(style);
-      object.rig.update(person.xyz,{color:object.color,opacity,xray,highlightJoint:highlight?.joint,intensity:(highlight?.intensity||0)/5});
+      object.rig.update(person.xyz,{color:object.color,opacity,xray:false,highlightJoint:highlight?.joint,intensity:(highlight?.intensity||0)/5});
     }
     if(customRig){
       customRig.group.visible=true;
-      customRig.update(person.xyz,{opacity,xray,highlightJoint:highlight?.joint,intensity:(highlight?.intensity||0)/5});
+      customRig.update(person.xyz,{opacity,xray:false,highlightJoint:highlight?.joint,intensity:(highlight?.intensity||0)/5});
       object.customUpdates.set(customId,(object.customUpdates.get(customId)||0)+1);
     }
-    object.bones.material.depthTest=!xray;object.joints.material.depthTest=!xray;
-    object.bones.renderOrder=xray?1000:0;object.joints.renderOrder=xray?1000:0;
+    object.bones.material.depthTest=true;object.joints.material.depthTest=true;
+    object.bones.renderOrder=0;object.joints.renderOrder=0;
     for(const mesh of [...object.solidBones,...object.solidJoints]){
-      mesh.renderOrder=rigged&&contactSettings.enabled?1002:xray?1000:0;
-      mesh.material.depthTest=!xray;mesh.material.depthWrite=!xray;
+      mesh.renderOrder=rigged&&contactSettings.enabled?1002:0;
+      mesh.material.depthTest=true;mesh.material.depthWrite=true;
     }
     for(let bone=0;bone<motion.edges.length;bone++){
       const [a,b]=motion.edges[bone], start=new THREE.Vector3(...person.xyz[a]), end=new THREE.Vector3(...person.xyz[b]);
@@ -220,10 +251,21 @@ function showFrame(index){
       mesh.material.color.set(object.color);mesh.material.opacity=opacity;
     });
   }
+  strikeAnchorsReady=true;
+  strikeCues?.refreshEstimatedLandings();
+  const activeEstimates=strikeCues?.getActiveEstimates()||[];
+  const nearestEstimate=activeEstimates.reduce((best,event)=>!best||Math.abs(event.frame-frame)<Math.abs(best.frame-frame)?event:best,null);
+  $('strikeEstimateHud').hidden=!nearestEstimate;
+  if(nearestEstimate){
+    $('strikeEstimateLabel').textContent=`Likely ${nearestEstimate.region.toLowerCase()} strike`;
+    $('strikeEstimateIntensity').textContent=`Relative intensity ${nearestEstimate.intensity}/5 · ${strikeConfidenceLabel(nearestEstimate.confidence).toLowerCase()}`;
+  }
   const people=motion.frames[frame].people;
   const gaps=people.filter(p=>p.sourceBoxInterpolated).length;
   const overlap=people.some(p=>p.overlappingSourceBoxes?.length);
-  $('frameQuality').textContent=gaps?`${gaps} pose${gaps===1?'':'s'} uses an interpolated tracking box. Faded poses need source review; contact is unverified.`:overlap?'People overlap in the footage. Faded poses may follow the wrong limbs; contact is unverified.':'Depth and contact are estimates. Compare the poses with the footage.';
+  const missing=motion.people.length-people.length;
+  const quality=gaps?`${gaps} pose${gaps===1?'':'s'} uses an interpolated tracking box. Check the footage; contact is unverified.`:overlap?'People overlap in the footage. Poses may follow the wrong limbs; contact is unverified.':'Depth and contact are estimates. Compare the poses with the footage.';
+  $('frameQuality').textContent=quality+(missing?` ${missing} participant${missing===1?' has':'s have'} no captured pose at this moment.`:'');
   showContacts();
   renderer.domElement.dataset.figureStyles=JSON.stringify(Object.fromEntries([...objects.keys()].map(id=>[id,effectiveStyle(id)])));
   renderer.domElement.dataset.rigCount=String([...objects].filter(([id,object])=>object.group.visible&&(['mannequin','dummy'].includes(effectiveStyle(id))||isModelStyle(effectiveStyle(id)))).length);
@@ -231,6 +273,7 @@ function showFrame(index){
   renderer.domElement.dataset.customModelCount=String(Object.keys(customUpdates).length);
   renderer.domElement.dataset.customModelUpdates=JSON.stringify(customUpdates);
   renderer.domElement.dataset.strikeCueCount=String(strikeCues?.group.children.filter(child=>child.visible).length||0);
+  renderer.domElement.dataset.estimatedStrikeCount=String(activeEstimates.length);
 }
 function showContacts(){
   contactMarkers.visible=contactSettings.enabled;
@@ -390,7 +433,7 @@ async function load(){
     const stage=$('orbitStage');world=new THREE.Scene();world.background=new THREE.Color('#142234');
     world.add(new THREE.HemisphereLight('#ffffff','#52637b',2));
     const figureLight=new THREE.DirectionalLight('#fff3df',2.5);figureLight.position.set(3,7,5);world.add(figureLight);
-    contactMarkers=new THREE.Group();world.add(contactMarkers);
+    contactMarkers=new THREE.Group();contactMarkers.userData.figureOverlay=true;world.add(contactMarkers);
     renderer=new THREE.WebGLRenderer({antialias:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
     camera=new THREE.PerspectiveCamera(48,1,0.01,1000);stage.append(renderer.domElement);
     orbit=new OrbitControls(camera,renderer.domElement);orbit.enableDamping=true;
@@ -403,6 +446,7 @@ async function load(){
     const cylinderGeometry=new THREE.CylinderGeometry(1,1,1,10), sphereGeometry=new THREE.SphereGeometry(1,12,8);
     for(let index=0;index<motion.people.length;index++){
       const person=motion.people[index], color=person.color||palette[index%palette.length], group=new THREE.Group();
+      group.userData.figureOverlay=true;
       const bones=new THREE.LineSegments(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color,transparent:true}));
       const joints=new THREE.Points(new THREE.BufferGeometry(),new THREE.PointsMaterial({color,size:0.035,transparent:true}));
       bones.geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(motion.edges.length*6),3));
@@ -476,11 +520,15 @@ async function load(){
       updateFigureStyles();
     });
     strikeCues=new StrikeCues({world,motion,storageKey:`systema-strikes-v1:${location.pathname}:${motion.sourceSha256}`,container:$('strikeCueEditor'),
+      resolveTargetPoint:(event,selectedFrame)=>strikeAnchorsReady?resolveStrikeLanding(event,{target:objects.get(String(event.targetId)),source:objects.get(String(event.strikerId)),frame:selectedFrame}):null,
       onSeek:seek,onChange:()=>{displayedFrameSignature='';showFrame(frame);},
-      onPlayPreview:({startFrame,endFrame})=>{
-        seek(startFrame);teachingPreviewEnd=endFrame;$('scenePlaybackScope').textContent='Strike preview';$('sceneFullPlayback').hidden=false;
+      onPlayPreview:({startFrame,endFrame,playbackRate,estimated=false})=>{
+        seek(startFrame);teachingPreviewEnd=endFrame;
+        if([.25,.5,1].includes(playbackRate)){video.playbackRate=playbackRate;$('sceneSpeed').value=String(playbackRate);}
+        $('scenePlaybackScope').textContent=estimated?'Estimated strike replay':'Strike preview';$('sceneFullPlayback').hidden=false;
         video.play().catch(()=>{$('sceneStatus').textContent='Tap Play to preview this strike.';});
       }});
+    strikeCues.group.userData.figureOverlay=true;
     updateFigureStyles();
     new ResizeObserver(resizeSceneCanvas).observe(stage);resizeSceneCanvas();
     $('emptyScene').hidden=true;
@@ -492,7 +540,7 @@ async function load(){
     $('sceneStatus').textContent=hasSourceCamera()?'Studio camera matched to the footage. Figure depth and scale remain estimates.':'3D estimates ready. Compare depth and contact with the footage.';$('sceneStatus').classList.add('ready');
     if(video.error)showVideoError();
     applySceneView(sceneView);
-    function render(){if(!sourceFollowing)orbit.update();renderer.render(world,camera);requestAnimationFrame(render);}render();
+    function render(){if(!sourceFollowing)orbit.update();renderSceneFrame();requestAnimationFrame(render);}render();
     const configUrl=site?siteLesson.environment:'studio/environment.json';
     if(configUrl){
       studioEnvironment=new StudioEnvironment({world,renderer,camera,orbit,canvas:renderer.domElement,grid,motion,configUrl,onChange:()=>showFrame(frame)});

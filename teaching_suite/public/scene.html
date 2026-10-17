@@ -41,6 +41,10 @@
         </div>
         <div id="orbitStage" class="orbit-stage" aria-label="Orbitable studio Gaussian splat and animated stick figures">
           <p id="emptyScene">The reconstructed scene is being prepared. You can still review the source footage.</p>
+          <div id="strikeEstimateHud" class="strike-estimate-hud" hidden aria-live="off">
+            <strong id="strikeEstimateLabel"></strong>
+            <span id="strikeEstimateIntensity"></span>
+          </div>
         </div>
       </section>
       <section id="sceneFootagePanel" class="viewer-panel" aria-label="Source footage viewer">
@@ -85,8 +89,8 @@
           </details>
         </div>
       </details>
-      <details id="strikeDetails" class="teaching-disclosure">
-        <summary>Strike illustrations <span class="teaching-summary-hint">Place, emphasize and replay</span></summary>
+      <details id="strikeDetails" class="teaching-disclosure" open>
+        <summary>Strike estimates &amp; illustrations <span class="teaching-summary-hint">Inspect landing regions and replay slowly</span></summary>
         <div id="strikeCueEditor"><p class="teaching-help">Loading teaching controls…</p></div>
       </details>
       <details id="studioDetails" class="studio-disclosure" open>

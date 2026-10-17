@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {detectMotionStrikes} from './strike-estimates.mjs';
 
 const NOTE='Teaching illustration · intensity is chosen, not measured force.';
 const MAX_CUES=100;
@@ -9,6 +10,7 @@ const JOINT_LABELS={pelvis:'Pelvis',left_hip:'Left hip',right_hip:'Right hip',sp
   right_collar:'Right collarbone',head:'Head',left_shoulder:'Left shoulder',right_shoulder:'Right shoulder',
   left_elbow:'Left elbow',right_elbow:'Right elbow',left_wrist:'Left wrist',right_wrist:'Right wrist'};
 const COLORS=['#ffe59a','#ffd06c','#ffad50','#ff884b','#ff6058'];
+export const strikeConfidenceLabel=value=>value>=.6?'Moderate confidence':'Low confidence';
 const clamp=(value,low,high)=>Math.min(high,Math.max(low,value));
 const isObject=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
@@ -54,16 +56,21 @@ function button(text,action,className=''){
   const node=element('button',className,text);node.type='button';node.addEventListener('click',action);return node;
 }
 
-/** Authored teaching overlays only: this class never modifies reconstructed movement. */
+/** Frame-driven teaching overlays; neither authored cues nor estimates modify captured movement. */
 export class StrikeCues{
-  constructor({world,motion,storageKey='systema-strike-cues-v1',onSeek=()=>{},onPlayPreview=()=>{},onChange=()=>{},container}={}){
+  constructor({world,motion,storageKey='systema-strike-cues-v1',onSeek=()=>{},onPlayPreview=()=>{},onChange=()=>{},resolveTargetPoint=null,container}={}){
     if(!world||!motion?.frames?.length||!motion?.people?.length||!motion?.jointNames?.length)throw Error('Strike cues need a reconstructed scene.');
     if(typeof motion.sourceSha256!=='string'||!/^[a-f0-9]{64}$/i.test(motion.sourceSha256))throw Error('Strike cues need the source fingerprint.');
     this.motion=motion;this.identity=clipIdentity(motion);this.onSeek=onSeek;this.onPlayPreview=onPlayPreview;this.onChange=onChange;
     this.storageKey=`${storageKey}:${Object.values(this.identity).join(':')}`;
     this.frame=0;this.enabled=true;this.cues=[];this.editingId=null;this.visuals=new Map();this.highlights=new Map();
+    this.estimatedEnabled=true;this.estimatedVisuals=new Map();this.activeEstimates=[];this.resolveTargetPoint=resolveTargetPoint;
+    try{this.estimates=detectMotionStrikes(motion);this.estimateError='';}
+    catch{this.estimates=[];this.estimateError='Motion estimates are unavailable for this clip.';}
     this.lastOptions={visibleIds:new Set(motion.people.map(person=>String(person.id))),xray:false};
-    this.group=new THREE.Group();this.group.name='Authored strike teaching illustrations';world.add(this.group);
+    this.group=new THREE.Group();this.group.name='Authored strike teaching illustrations';this.group.userData.figureOverlay=true;world.add(this.group);
+    this.estimatedGroup=new THREE.Group();this.estimatedGroup.name='Motion-estimated strike highlights';
+    this.estimatedGroup.userData.figureOverlay=true;this.estimatedGroup.userData.motionStrikeOverlay=true;world.add(this.estimatedGroup);
     this.prefix=instanceCount++?'strikeCue'+instanceCount:'strikeCue';
     this.loadStatus='';
     try{
@@ -76,6 +83,7 @@ export class StrikeCues{
   mount(container){
     this.container=container;container.replaceChildren();
     const root=element('div','strike-cues');this.root=root;container.append(root);
+    this.mountEstimates(root);
     root.append(element('p','strike-note',NOTE));
     const controls=element('div','strike-controls');
     const enabledLabel=element('label','strike-toggle');
@@ -137,6 +145,124 @@ export class StrikeCues{
     return this;
   }
 
+  mountEstimates(root){
+    const section=element('section','strike-estimates');section.setAttribute('aria-label','Likely strikes from captured motion');
+    const header=element('div','strike-estimate-header');header.append(element('h3','','Likely strike estimates'));
+    const toggle=element('label','strike-estimate-toggle');
+    this.estimatedInput=element('input');this.estimatedInput.type='checkbox';this.estimatedInput.id=this.prefix+'EstimatedEnabled';this.estimatedInput.checked=this.estimatedEnabled;
+    this.estimatedInput.addEventListener('change',()=>{this.estimatedEnabled=this.estimatedInput.checked;this.changed();});
+    toggle.append(this.estimatedInput,document.createTextNode(' Highlight likely strikes'));header.append(toggle);section.append(header);
+    section.append(element('p','strike-estimate-summary','Motion-based candidates may include blocks or grabs. Relative motion intensity is not measured force; contact is unverified.'));
+    this.estimateStatus=element('p','strike-estimate-status');this.estimateStatus.id=this.prefix+'EstimatedStatus';
+    this.estimateStatus.textContent=this.estimateError||`${this.estimates.length} possible strike${this.estimates.length===1?'':'s'} · scrub, jump or replay slowly.`;
+    this.estimatedCurrent=element('p','strike-estimate-current');this.estimatedCurrent.id=this.prefix+'EstimatedCurrent';
+    this.estimatedCurrent.setAttribute('aria-live','polite');this.estimatedCurrent.setAttribute('aria-atomic','true');
+    this.estimatedList=element('ol','strike-estimate-list');this.estimatedList.id=this.prefix+'EstimatedList';
+    this.estimatedList.setAttribute('aria-label','Motion-estimated strike moments');
+    this.estimateItems=new Map();
+    for(const event of this.estimates){
+      const item=element('li','strike-estimate-item');item.dataset.estimateId=event.id;item.dataset.frame=String(event.frame);
+      const copy=element('div','strike-item-copy'),limb=LIMBS.find(([joint])=>joint===event.limb)?.[1]||JOINT_LABELS[event.limb]||event.limb;
+      const region=event.region||JOINT_LABELS[event.targetJoint]||event.targetJoint;
+      const heading=element('strong','',`${limb} → ${region}`),intensity=element('span','strike-estimate-intensity',`${event.intensity}/5 relative`);
+      intensity.style.setProperty('--strike-intensity-color',COLORS[event.intensity-1]);
+      intensity.setAttribute('aria-label',`Estimated relative intensity ${event.intensity} of 5`);
+      const confidence=strikeConfidenceLabel(event.confidence);
+      copy.append(heading,element('span','strike-estimate-meta',`${this.sourceTime(event.frame)} · ${this.personName(event.strikerId)} → ${this.personName(event.targetId)}`),
+        element('span','strike-estimate-confidence',`${confidence}${event.uncertainty?' · '+event.uncertainty:''}`),intensity);
+      const actions=element('div','strike-actions strike-estimate-actions');
+      const jump=button('Jump',()=>{this.onSeek(event.frame);this.changed();});
+      jump.setAttribute('aria-label',`Jump to estimated ${limb.toLowerCase()} strike at ${this.sourceTime(event.frame)}`);
+      const replay=button('Replay slowly',()=>{
+        this.estimatedEnabled=true;this.estimatedInput.checked=true;
+        this.onPlayPreview({startFrame:event.startFrame,endFrame:event.endFrame,playbackRate:.25,estimated:true});this.changed();
+      });
+      replay.setAttribute('aria-label',`Replay estimated ${limb.toLowerCase()} strike at ${this.sourceTime(event.frame)} slowly`);
+      actions.append(jump,replay);item.append(copy,actions);this.estimatedList.append(item);this.estimateItems.set(event.id,item);
+    }
+    if(!this.estimates.length)this.estimatedList.hidden=true;
+    section.append(this.estimateStatus,this.estimatedCurrent,this.estimatedList);root.append(section);
+  }
+  personName(id){const person=this.motion.people.find(person=>String(person.id)===String(id));return person?.name||`Participant ${id}`;}
+  getActiveEstimates(){return [...this.activeEstimates];}
+  personAt(frame,id){return this.motion.frames[clamp(Math.round(frame),0,this.identity.frameCount-1)]?.people.find(person=>String(person.id)===String(id));}
+  pointAt(frame,id,joint){
+    const point=this.personAt(frame,id)?.xyz?.[this.motion.jointNames.indexOf(joint)];
+    return Array.isArray(point)&&point.length===3&&point.every(Number.isFinite)?new THREE.Vector3(...point):null;
+  }
+  estimateLanding(event){
+    const segment=event.targetSegment;
+    if(segment){
+      const a=this.pointAt(this.frame,event.targetId,segment.start||segment[0]),b=this.pointAt(this.frame,event.targetId,segment.end||segment[1]);
+      if(a&&b)return a.lerp(b,clamp(event.targetFraction??segment.fraction??.5,0,1)).add(new THREE.Vector3(...(event.surfaceOffset||[0,0,0])));
+    }
+    return this.pointAt(this.frame,event.targetId,event.targetJoint)?.add(new THREE.Vector3(...(event.offset||[0,0,0])))||null;
+  }
+  createEstimatedVisual(event){
+    const group=new THREE.Group();group.name=`Estimated strike ${event.id}`;group.userData.estimateId=event.id;
+    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(65*3),3));
+    const trajectory=new THREE.Line(geometry,new THREE.LineBasicMaterial({transparent:true,opacity:.8,depthWrite:false}));trajectory.name='Captured limb trajectory';
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(1,.045,8,40),new THREE.MeshBasicMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide}));ring.name='Estimated landing ring';
+    const pulse=new THREE.Mesh(new THREE.SphereGeometry(1,16,10),new THREE.MeshBasicMaterial({transparent:true,opacity:.12,depthWrite:false}));pulse.name='Relative intensity pulse';
+    const bead=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),new THREE.MeshBasicMaterial({transparent:true,depthWrite:false}));bead.name='Captured striking limb';
+    group.add(trajectory,ring,pulse,bead);this.estimatedGroup.add(group);
+    const visual={group,trajectory,ring,pulse,bead,event};this.estimatedVisuals.set(event.id,visual);return visual;
+  }
+  refreshEstimatedLandings(){
+    for(const event of this.activeEstimates){
+      const visual=this.estimatedVisuals.get(event.id);if(!visual?.group.visible)continue;
+      let resolved=null;
+      if(typeof this.resolveTargetPoint==='function'){
+        try{resolved=this.resolveTargetPoint(event,this.frame);}catch{/* Fall back to captured target anatomy. */}
+      }
+      const asVector=value=>value?.isVector3?value.clone():Array.isArray(value)&&value.length===3&&value.every(Number.isFinite)?new THREE.Vector3(...value):null;
+      const point=asVector(resolved?.point)||asVector(resolved)||this.estimateLanding(event);
+      if(!point){visual.ring.visible=false;visual.pulse.visible=false;continue;}
+      const normal=asVector(resolved?.normal)||visual.bead.position.clone().sub(point);
+      if(normal.lengthSq()<1e-8)normal.set(0,0,1);normal.normalize();
+      visual.ring.visible=true;visual.pulse.visible=true;visual.ring.position.copy(point);visual.pulse.position.copy(point);
+      visual.ring.lookAt(point.clone().add(normal));visual.group.userData.landingPoint=point.toArray();
+      visual.group.userData.landingResolved=Boolean(resolved);visual.group.userData.frame=this.frame;
+    }
+  }
+  updateEstimates(ids){
+    this.estimatedGroup.visible=this.estimatedEnabled;this.activeEstimates=[];
+    for(const visual of this.estimatedVisuals.values())visual.group.visible=false;
+    if(this.estimatedEnabled){
+      for(const event of this.estimates){
+        if(this.frame<event.startFrame||this.frame>event.endFrame||!ids.has(String(event.strikerId))||!ids.has(String(event.targetId)))continue;
+        const source=this.pointAt(this.frame,event.strikerId,event.limb),landing=this.estimateLanding(event);if(!source||!landing)continue;
+        this.activeEstimates.push(event);const visual=this.estimatedVisuals.get(event.id)||this.createEstimatedVisual(event);visual.group.visible=true;
+        const color=COLORS[event.intensity-1],since=(this.frame-event.frame)/this.identity.fps;
+        // A frame-based pulse gives the same contact emphasis while paused, scrubbing or replaying.
+        const emphasis=Math.exp(-Math.pow(since/.13,2)),radius=.055+event.intensity*.013;
+        visual.ring.scale.setScalar(radius*(1+emphasis*.55));visual.ring.material.opacity=.45+emphasis*.5;
+        visual.pulse.scale.setScalar(radius*(.7+emphasis*.55));visual.pulse.material.opacity=.045+emphasis*.17;
+        visual.bead.position.copy(source);visual.bead.scale.setScalar(.017+event.intensity*.003);visual.bead.material.opacity=.75;
+        const points=[],first=event.startFrame,last=Math.min(this.frame,event.endFrame),step=Math.max(1,Math.ceil((last-first)/64));
+        for(let sample=first;sample<=last;sample+=step){const point=this.pointAt(sample,event.strikerId,event.limb);if(point)points.push(point);else points.length=0;}
+        if(points.length&&points[points.length-1].distanceToSquared(source)>1e-12)points.push(source);
+        const array=visual.trajectory.geometry.attributes.position.array;
+        points.slice(-65).forEach((point,index)=>point.toArray(array,index*3));
+        visual.trajectory.geometry.setDrawRange(0,Math.min(65,points.length));visual.trajectory.geometry.attributes.position.needsUpdate=true;
+        visual.trajectory.geometry.computeBoundingSphere();visual.trajectory.visible=points.length>1;
+        visual.group.traverse(object=>{if(object.material){object.material.color?.set(color);object.material.depthTest=true;object.material.depthWrite=false;object.renderOrder=4;}});
+        for(const [id,jointName,role] of [[event.strikerId,event.limb,'striker'],[event.targetId,event.targetJoint,'target']]){
+          const joint=this.motion.jointNames.indexOf(jointName);if(joint<0)continue;
+          if((this.highlights.get(String(id))?.intensity||0)<=event.intensity)this.highlights.set(String(id),{joint,jointName,intensity:event.intensity,color,role,estimated:true});
+        }
+      }
+    }
+    this.refreshEstimatedLandings();
+    for(const [id,item] of this.estimateItems||[]){const active=this.activeEstimates.some(event=>event.id===id);item.classList.toggle('active',active);if(active)item.setAttribute('aria-current','true');else item.removeAttribute('aria-current');}
+    if(this.estimatedCurrent){
+      const event=this.activeEstimates.reduce((best,event)=>!best||Math.abs(event.frame-this.frame)<Math.abs(best.frame-this.frame)?event:best,null);
+      const text=!this.estimatedEnabled?'Motion highlights off.':event?`Likely ${event.region||JOINT_LABELS[event.targetJoint]||event.targetJoint} strike · ${event.intensity}/5 relative intensity${this.activeEstimates.length>1?` · ${this.activeEstimates.length} nearby moments`:''}`:'Scrub to a listed moment to see the estimated landing.';
+      if(this.estimatedCurrent.textContent!==text)this.estimatedCurrent.textContent=text;
+      this.estimatedCurrent.dataset.activeCount=String(this.activeEstimates.length);this.estimatedCurrent.dataset.frame=String(this.frame);
+      this.estimatedCurrent.dataset.estimateId=event?.id||'';this.estimatedCurrent.dataset.intensity=event?String(event.intensity):'';
+    }
+  }
   sourceTime(frame){return (this.identity.sourceStart+frame/this.identity.fps).toFixed(2)+'s';}
   message(text){if(this.status)this.status.textContent=text;}
   document(cues=this.cues){return {schemaVersion:1,...this.identity,cues};}
@@ -270,6 +396,7 @@ export class StrikeCues{
     this.frame=clamp(Math.round(Number(frame)||0),0,this.identity.frameCount-1);
     const ids=visibleIds instanceof Set?new Set([...visibleIds].map(String)):new Set((visibleIds||[]).map(String));
     this.lastOptions={visibleIds:ids,xray:Boolean(xray)};this.highlights.clear();this.group.visible=this.enabled;
+    this.updateEstimates(ids);
     if(this.frameLabel)this.frameLabel.textContent=`Current frame ${this.frame} · source ${this.sourceTime(this.frame)}`;
     if(this.previewCue){
       const range=this.cueWindow(this.previewCue);
@@ -311,5 +438,9 @@ export class StrikeCues{
       }
     }
   }
-  dispose(){for(const visual of this.visuals.values())this.disposeVisual(visual);this.visuals.clear();this.group.removeFromParent();this.container?.replaceChildren();}
+  dispose(){
+    for(const visual of this.visuals.values())this.disposeVisual(visual);this.visuals.clear();
+    for(const visual of this.estimatedVisuals.values())visual.group.traverse(object=>{object.geometry?.dispose();object.material?.dispose();});
+    this.estimatedVisuals.clear();this.activeEstimates=[];this.estimatedGroup.removeFromParent();this.group.removeFromParent();this.container?.replaceChildren();
+  }
 }
