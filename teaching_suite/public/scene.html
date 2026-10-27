@@ -52,6 +52,20 @@
         <div class="scene-footage-stage"><video id="sceneVideo" src="media/source-reference.mp4" playsinline preload="metadata" aria-label="Source movement footage. Use the shared playback controls below."></video></div>
       </section>
     </div>
+    <details id="figureDetails" class="character-drawer" open>
+      <summary>
+        <span class="character-drawer-title">Characters</span>
+        <span id="characterChips" class="character-chips"></span>
+        <span class="character-drawer-hint">Show, rename and restyle each person</span>
+      </summary>
+      <div class="figure-options">
+        <div class="figure-options-heading">
+          <label>All participants <select id="figureStyle" disabled><option value="skeleton">Line skeleton</option><option value="bones">Solid skeleton</option><option value="mannequin" selected>Rigged mannequin</option><option value="dummy">Training dummy</option><option value="mixed" disabled>Individual styles</option></select></label>
+          <p id="characterNameStatus" class="character-name-help" role="status">Tick to show a person · click a name to rename. Names are saved in this browser.</p>
+        </div>
+        <div id="scenePeople" class="figure-people"></div>
+      </div>
+    </details>
     <div id="sceneTransport" class="scene-transport" role="group" aria-label="Synchronized scene playback">
       <button id="scenePlay" class="play-control" aria-label="Play movement" title="Play movement">
         <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z" fill="currentColor" stroke="none"/></svg>
@@ -73,22 +87,19 @@
         <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4Zm4 3a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>
       </button>
     </div>
+    <details id="trimEditor" class="trim-editor" hidden>
+      <summary><span class="trim-editor-title">Trim clip</span><span id="trimSummary" class="trim-summary">Full clip</span><span class="trim-editor-hint">Teacher only · footage files are not changed</span></summary>
+      <div class="trim-fields">
+        <div class="trim-point"><label>Start <span class="trim-input"><input id="trimStart" type="number" step="0.1" inputmode="decimal"><span>s</span></span></label><button id="trimStartHere" type="button">Use current time</button></div>
+        <div class="trim-point"><label>End <span class="trim-input"><input id="trimEnd" type="number" step="0.1" inputmode="decimal"><span>s</span></span></label><button id="trimEndHere" type="button">Use current time</button></div>
+        <div class="trim-actions"><button id="trimClear" type="button">Show full clip</button><button id="trimSave" type="button" class="primary">Save trim</button></div>
+      </div>
+      <p id="trimStatus" class="trim-status" role="status">Move the playhead and use the current time, or type seconds. Show full clip to pick points outside the current trim.</p>
+    </details>
     <section id="sceneDetailsPanel" class="scene-details-panel" aria-label="Scene options and estimates">
-      <div class="participant-row"><span>Show people</span><div id="scenePeople" class="participant-buttons"></div></div>
-      <details id="figureDetails" class="teaching-disclosure" open>
-        <summary>Figure options <span class="teaching-summary-hint">Swap styles while playing</span></summary>
-        <div class="figure-options">
-          <div class="figure-options-heading">
-            <label>All participants <select id="figureStyle" disabled><option value="skeleton">Line skeleton</option><option value="bones">Solid skeleton</option><option value="mannequin" selected>Rigged mannequin</option><option value="dummy">Training dummy</option><option value="mixed" disabled>Individual styles</option></select></label>
-            <p>Use a different figure for each person. Every style follows the same reconstructed motion.</p>
-          </div>
-          <div id="figurePeople" class="figure-people"></div>
-          <p id="characterNameStatus" class="character-name-help" role="status">Click a name to rename a character. Names are saved in this browser.</p>
-          <details id="modelDetails" class="model-disclosure" open>
-            <summary>Character library <span class="teaching-summary-hint">Three built-in choices</span></summary>
-            <div id="modelLibrary"><p class="teaching-help">Model library will be available when the scene is ready.</p></div>
-          </details>
-        </div>
+      <details id="modelDetails" class="teaching-disclosure model-disclosure">
+        <summary>Character library <span class="teaching-summary-hint">Built-in characters and credits</span></summary>
+        <div class="figure-options"><div id="modelLibrary"><p class="teaching-help">Model library will be available when the scene is ready.</p></div></div>
       </details>
       <details id="strikeDetails" class="teaching-disclosure" open>
         <summary>Strike estimates &amp; illustrations <span class="teaching-summary-hint">Inspect landing regions and replay slowly</span></summary>

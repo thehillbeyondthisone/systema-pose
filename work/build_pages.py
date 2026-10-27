@@ -13,7 +13,7 @@ import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / 'teaching_suite' / 'public'
-ASSETS = ('custom-figure.js', 'model-library.js', 'figure-rig.js', 'scene-navigation.js', 'contact-shadows.js', 'strike-cues.js', 'strike-estimates.mjs', 'strike-placement.js', 'studio-environment.js', 'studio-lighting.js', 'studio-registration.mjs', 'app.js', 'style.css', 'annotations.css', 'views.css', 'scene.js',
+ASSETS = ('custom-figure.js', 'model-library.js', 'figure-rig.js', 'scene-navigation.js', 'source-camera.mjs', 'contact-shadows.js', 'strike-cues.js', 'strike-estimates.mjs', 'strike-placement.js', 'studio-environment.js', 'studio-lighting.js', 'studio-registration.mjs', 'app.js', 'style.css', 'annotations.css', 'views.css', 'scene.js',
           'scene.css', 'contact_geometry.mjs', 'site-data.js', 'library.js', 'library.css')
 
 
@@ -171,6 +171,17 @@ def build(output, config_path):
                   'category': item['category'], 'people': clean_people, 'notes': [],
                   'sourceSha256': sha, 'video': prefix + 'source.mp4', 'motion': prefix + 'motion.json',
                   **{key: clean_motion[key] for key in ('sourceStart', 'sourceEnd', 'fps')}}
+        if 'videoFrameOffset' in item:
+            offset = item['videoFrameOffset']
+            if not isinstance(offset, (int, float)) or not math.isfinite(offset) or not 0 <= offset < 1 / motion['fps']:
+                raise ValueError('Video frame offset must be shorter than one frame')
+            lesson['videoFrameOffset'] = offset
+        if 'trimStart' in item or 'trimEnd' in item:
+            trim = item.get('trimStart'), item.get('trimEnd')
+            if (not all(isinstance(v, (int, float)) and math.isfinite(v) for v in trim)
+                    or not lesson['sourceStart'] <= trim[0] < trim[1] <= lesson['sourceEnd']):
+                raise ValueError('Trim must be a range inside the clip')
+            lesson['trimStart'], lesson['trimEnd'] = trim
         shutil.copyfile(video, folder / 'source.mp4')
         write_json(folder / 'motion.json', clean_motion)
         if item.get('poster'):
@@ -206,7 +217,7 @@ def build(output, config_path):
 
         write_json(folder / 'lesson.json', lesson)
         entries.append({key: item[key] for key in ('id', 'title', 'description', 'category', 'tags')} |
-                       {'lesson': prefix + 'lesson.json', 'duration': motion['sourceEnd'] - motion['sourceStart'],
+                       {'lesson': prefix + 'lesson.json', 'duration': lesson.get('trimEnd', lesson['sourceEnd']) - lesson.get('trimStart', lesson['sourceStart']),
                         'has3d': bool(item.get('scene')), 'poster': prefix + poster_name})
     write_json(output / 'catalog.json', {'title': config['title'], 'lessons': entries})
     print(f'Built {len(entries)} clip(s) in {output}')

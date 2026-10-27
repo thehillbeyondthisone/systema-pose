@@ -18,9 +18,19 @@
       data.lessons.forEach(lesson => {
         const card = document.createElement('article'); card.className = 'library-card';
         const title = document.createElement('h3'); title.textContent = lesson.title;
-        const summary = document.createElement('p'); summary.textContent = `${lesson.sourceEnd.toFixed(1)}s footage · ${lesson.segments.length} prepared passages`;
-        const link = document.createElement('a'); link.className = 'file-button'; link.href = `/?project=${encodeURIComponent(lesson.id)}`; link.textContent = 'Open lesson';
-        card.append(title,summary,link); $('lessonLibrary').append(card);
+        const trimmed = Number.isFinite(lesson.trimStart) && Number.isFinite(lesson.trimEnd);
+        const duration = trimmed ? lesson.trimEnd-lesson.trimStart : lesson.sourceEnd-lesson.sourceStart;
+        const summary = document.createElement('p');
+        summary.textContent = `${duration.toFixed(1)}s ${trimmed ? 'trimmed footage' : 'footage'} · ${lesson.has3d ? '3D scene + 2D motion' : '2D motion'}`;
+        // Lessons with a 3D scene open in 3D beside the footage; annotations stay one click away.
+        const id = encodeURIComponent(lesson.id);
+        const link = document.createElement('a'); link.className = 'file-button'; link.href = lesson.has3d ? `/scene.html?project=${id}` : `/?project=${id}`; link.textContent = 'Open lesson';
+        card.append(title,summary,link);
+        if (lesson.has3d) {
+          const notes = document.createElement('a'); notes.className = 'file-button quiet'; notes.href = `/?project=${id}`; notes.textContent = 'Annotate in 2D';
+          card.append(notes);
+        }
+        $('lessonLibrary').append(card);
       });
       $('setupError').hidden = true;
     } catch (failure) { $('setupError').textContent = failure.message; $('setupError').hidden = false; }

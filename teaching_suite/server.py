@@ -16,6 +16,7 @@ from urllib.parse import urlparse, parse_qs, unquote
 import onboarding
 import student_data
 import admin
+import lesson_studio
 
 ROOT = Path(__file__).resolve().parent
 PROJECT = ROOT.parent
@@ -192,6 +193,12 @@ class Handler(SimpleHTTPRequestHandler):
                 self.read_project(parts[1])
                 return str(onboarding.folder(parts[1])/parts[2])
             except ValueError:return str(PUBLIC/'missing')
+        if len(parts)==3 and parts[0]=='lesson-studio' and parts[2]=='scene.json':
+            try:
+                scene=lesson_studio.scene_path(self.read_project(parts[1]))
+                if scene:return str(scene)
+            except ValueError:pass
+            return str(PUBLIC/'missing')
         if url=='/media/source-reference.mp4':return str(PROJECT/'outputs/pilot/source-reference.mp4')
         if url in ['/3d-pilot/scene.json','/3d-pilot/manifest.json']:
             return str(PROJECT/'outputs/3d-pilot'/url.split('/')[-1])
@@ -210,6 +217,9 @@ class Handler(SimpleHTTPRequestHandler):
             if path.startswith(('/admin','/api/admin')):
                 if not admin.local_request(self):return self.send_json({'error':'Open the admin dashboard on this PC using http://127.0.0.1 and the server port.'},403)
                 if path=='/api/admin/state':return self.send_json(admin.state())
+                if path=='/api/admin/token':return self.send_json({'token':admin.TOKEN})
+                match=re.fullmatch(r'/api/admin/clips/([a-z0-9]+(?:-[a-z0-9]+)*)/tracks',path)
+                if match:return self.send_json(admin.track_corrections.get(admin,match[1]))
                 match=re.fullmatch(r'/api/admin/clips/([a-z0-9]+(?:-[a-z0-9]+)*)/reconstruction/log',path)
                 if match:return self.send_json(admin.reconstruction.log(admin,match[1]))
             if path=='/api/video-requests':
@@ -217,8 +227,18 @@ class Handler(SimpleHTTPRequestHandler):
             if path=='/api/annotations':
                 student,lesson_scope,_=self.annotation_context()
                 return self.send_json({'notes':student_data.notes(student,lesson_scope)})
-            if path=='/api/projects':return self.send_json({'lessons':[v for v in onboarding.library() if v['status']=='ready' and (not v.get('adminPrivate') or admin.local_request(self))]})
+            if path=='/api/projects':
+                lessons=[v for v in onboarding.library() if v['status']=='ready' and (not v.get('adminPrivate') or admin.local_request(self))]
+                return self.send_json({'lessons':[{**v,'has3d':lesson_studio.catalog_entry(v) is not None} for v in lessons]})
+            match=re.fullmatch(r'/api/projects/([a-f0-9]{32})/studio',path)
+            if match:return self.send_json(lesson_studio.studio(self.read_project(match[1])))
             if path.startswith('/api/projects/'):return self.send_json(self.read_project(path.split('/')[-1]))
+            match=re.fullmatch(r'/lesson-studio/([a-f0-9]{32})/(manifest|environment)\.json',path)
+            if match:
+                lesson=self.read_project(match[1])
+                value=lesson_studio.manifest(lesson) if match[2]=='manifest' else lesson_studio.environment(lesson)
+                if value is None:raise ValueError('This lesson has no 3D scene.')
+                return self.send_json(value)
             if path in ['/api/lesson','/lesson.json']:
                 lesson_id=parse_qs(urlparse(self.path).query).get('project',[None])[0]
                 return self.send_json(self.read_project(lesson_id) if lesson_id else json.loads((DATA/'lesson.json').read_text(encoding='utf-8')))
@@ -253,6 +273,8 @@ class Handler(SimpleHTTPRequestHandler):
                 if path=='/api/admin/requirements':return self.send_json(admin.reconstruction.requirements(admin,use_gpu=raw.get('gpu') is True),202)
                 if path=='/api/admin/gpu/pause':return self.send_json(admin.reconstruction.pause_gpu(admin))
                 if path=='/api/admin/rooms/import':return self.send_json(admin.room_scans.import_scan(admin,raw),202)
+                match=re.fullmatch(r'/api/admin/clips/([a-z0-9]+(?:-[a-z0-9]+)*)/tracks',path)
+                if match:return self.send_json(admin.track_corrections.save(admin,match[1],raw))
                 match=re.fullmatch(r'/api/admin/clips/([a-z0-9]+(?:-[a-z0-9]+)*)/(room|room-placement)',path)
                 if match:
                     if match[2]=='room':return self.send_json(admin.room_scans.attach(admin,match[1],raw))
@@ -262,6 +284,8 @@ class Handler(SimpleHTTPRequestHandler):
                     if match[2]=='reconstruct':return self.send_json(admin.reconstruction.reconstruct(admin,match[1],raw),202)
                     if match[2]=='cancel':return self.send_json(admin.reconstruction.cancel(admin,match[1]))
                     return self.send_json(admin.reconstruction.approve(admin,match[1],raw))
+                match=re.fullmatch(r'/api/admin/lessons/([a-f0-9]{32})/trim',path)
+                if match:return self.send_json(lesson_studio.set_trim(match[1],raw))
                 match=re.fullmatch(r'/api/admin/clips/([a-z0-9]+(?:-[a-z0-9]+)*)/scene',path)
                 if match:return self.send_json(admin.attach_scene(match[1],raw))
                 return self.send_json({'error':'Unknown admin action.'},404)

@@ -39,7 +39,15 @@ def stop_gpu_jobs():
 def save(path, value):
     temp = path.with_suffix('.tmp')
     temp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
-    os.replace(temp, path)
+    # Windows file readers and OneDrive can briefly hold the destination open.
+    # Retry the atomic rename only; keep the original error if the lock persists.
+    for attempt in range(5):
+        try:
+            os.replace(temp, path)
+            break
+        except PermissionError:
+            if attempt == 4:raise
+            time.sleep(.05)
 
 
 def folder(lesson_id):

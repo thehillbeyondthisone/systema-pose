@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "teaching-suite",
+      "runtimeExecutable": "py",
+      "runtimeArgs": ["-3", "teaching_suite/server.py"],
+      "port": 8770
+    }
+  ]
+}

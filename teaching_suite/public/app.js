@@ -94,7 +94,20 @@
     return json(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(value)});
   }
   const seconds = value => `${Number(value).toFixed(2)}s`;
-  const sourceTime = () => motion.sourceStart + video.currentTime;
+  const videoFrameOffset = () => lesson?.videoFrameOffset || 0;
+  const sourceTime = () => motion.sourceStart + Math.max(0,video.currentTime-videoFrameOffset());
+  // A teacher's trim limits playback to part of the footage; the files stay complete.
+  function clipRange() {
+    const start = lesson?.trimStart, end = lesson?.trimEnd;
+    return Number.isFinite(start) && Number.isFinite(end) && motion.sourceStart <= start && start < end && end <= motion.sourceEnd
+      ? [start,end] : [motion.sourceStart,motion.sourceEnd];
+  }
+  const firstFrame = () => Math.max(0,Math.min(frameCount-1,Math.round((clipRange()[0]-motion.sourceStart)*motion.fps)));
+  const lastFrame = () => Math.max(firstFrame(),Math.min(frameCount-1,Math.round((clipRange()[1]-motion.sourceStart)*motion.fps)-1));
+  const atClipEnd = () => frameIndex >= lastFrame() || frameIndex < firstFrame();
+  const timelinePercent = value => (value-clipRange()[0])/(clipRange()[1]-clipRange()[0])*100;
+  const sceneHref = () => site ? site.link('scene.html',lesson.id,frameIndex)
+    : projectId ? `/scene.html?project=${encodeURIComponent(projectId)}&frame=${frameIndex}` : `/scene.html?frame=${frameIndex}`;
   const currentFrame = () => frameMap.get(frameIndex) || {people:[]};
   function fitViewer() {
     cancelAnimationFrame(fitRequest);
@@ -113,7 +126,8 @@
     const passage = playbackMode === 'passage' && selected;
     $('play').classList.toggle('is-playing',!video.paused && !video.ended);
     $('play').setAttribute('aria-label',`${video.paused ? 'Play' : 'Pause'} ${passage ? 'passage' : 'full clip'}`);
-    $('playbackScope').textContent = passage ? `Passage · ${seconds(selected.start)}–${seconds(selected.end)}` : 'Full clip';
+    const trimmed = motion && (clipRange()[0] > motion.sourceStart || clipRange()[1] < motion.sourceEnd);
+    $('playbackScope').textContent = passage ? `Passage · ${seconds(selected.start)}–${seconds(selected.end)}` : trimmed ? 'Trimmed clip' : 'Full clip';
     $('playbackScope').classList.toggle('passage-mode',Boolean(passage));
     $('playFullClip').hidden = !passage;
     $('replayPassage').hidden = !selected;
@@ -121,9 +135,9 @@
     $('loopPassage').disabled = !selected;
     $('selectedPassage').hidden = !selected;
     if (selected && motion) {
-      const duration = motion.sourceEnd-motion.sourceStart;
-      $('selectedPassage').style.left = `${(selected.start-motion.sourceStart)/duration*100}%`;
-      $('selectedPassage').style.width = `${(selected.end-selected.start)/duration*100}%`;
+      const left = Math.max(0,timelinePercent(selected.start)), right = Math.min(100,timelinePercent(selected.end));
+      $('selectedPassage').style.left = `${left}%`;
+      $('selectedPassage').style.width = `${Math.max(0,right-left)}%`;
       $('scrub').setAttribute('aria-description',`Selected passage: ${seconds(selected.start)} to ${seconds(selected.end)}. Use Play passage to replay it.`);
     } else $('scrub').removeAttribute('aria-description');
   }
@@ -218,13 +232,13 @@
   }
   function render() {
     if (!motion || !lesson) return;
-    frameIndex = Math.max(0,Math.min(frameCount-1,Math.floor(video.currentTime * motion.fps + .01)));
+    frameIndex = Math.max(0,Math.min(frameCount-1,Math.floor((video.currentTime-videoFrameOffset()) * motion.fps + .01)));
     $('scrub').value = String(frameIndex);
     $('currentTime').textContent = `${sourceTime().toFixed(3)}s`;
     $('scrub').setAttribute('aria-valuetext',`${sourceTime().toFixed(3)} source seconds`);
-    const sceneHref = site ? site.link('scene.html',lesson.id,frameIndex) : `/scene.html?frame=${frameIndex}`;
+    const href = sceneHref();
     for (const id of ['sceneLink','sceneShortcut']) {
-      if ($(id).getAttribute('href') !== sceneHref) $(id).setAttribute('href',sceneHref);
+      if ($(id).getAttribute('href') !== href) $(id).setAttribute('href',href);
     }
     const time = sourceTime();
     const overlap = (time >= 20.5 && time <= 25.5) || time >= 28;
@@ -238,14 +252,15 @@
     renderRequest = null;
     if (video.paused || video.ended) return;
     if (playbackMode === 'passage' && selected && sourceTime() >= selected.end - .01) {
-      if ($('loopPassage').checked) video.currentTime = selected.start - motion.sourceStart;
+      if ($('loopPassage').checked) video.currentTime = videoFrameOffset() + selected.start - motion.sourceStart;
       else { video.pause(); seek(selected.end); return; }
     }
+    if (sourceTime() >= clipRange()[1]-.01) { video.pause(); seek(clipRange()[1]); return; }
     render(); renderRequest = requestAnimationFrame(tick);
   }
   function seek(sourceSeconds) {
-    const time = Math.max(0,Math.min((frameCount-1)/motion.fps,sourceSeconds-motion.sourceStart));
-    video.currentTime = time;
+    const time = Math.max(firstFrame()/motion.fps,Math.min(lastFrame()/motion.fps,sourceSeconds-motion.sourceStart));
+    video.currentTime = videoFrameOffset() + time + .001/motion.fps;
     render();
   }
   async function play() {
@@ -266,9 +281,9 @@
       const excerpt = document.createElement('span'); excerpt.className = 'note-excerpt'; excerpt.textContent = note.text.length > 145 ? note.text.slice(0,142)+'…' : note.text || 'This older annotation has no text explanation.';
       content.append(title,meta,excerpt); card.append(number,content);
       card.addEventListener('click',() => openNote(note)); list.append(card);
-      const duration = motion.sourceEnd-motion.sourceStart;
-      const bar = document.createElement('span'); bar.style.left = `${(note.start-motion.sourceStart)/duration*100}%`;
-      bar.style.width = `${(note.end-note.start)/duration*100}%`; $('noteTicks').append(bar);
+      const left = Math.max(0,timelinePercent(note.start)), right = Math.min(100,timelinePercent(note.end));
+      const bar = document.createElement('span'); bar.style.left = `${left}%`;
+      bar.style.width = `${Math.max(0,right-left)}%`; if (right > left) $('noteTicks').append(bar);
     });
     if (!lesson.notes.length) {
       const empty = document.createElement('p'); empty.className = 'empty-notes';
@@ -385,13 +400,13 @@
         $('lessonTitle').textContent = lesson.title;
         $('lessonDescription').textContent = 'Review the skeletons in your selected passages. Pause to add an explanation.';
         $('lessonEyebrow').textContent = 'YOUR MOVEMENT LESSON';
-        $('lessonDuration').textContent = `${Number((motion.sourceEnd-motion.sourceStart).toFixed(1))} seconds`;
+        $('lessonDuration').textContent = `${Number((clipRange()[1]-clipRange()[0]).toFixed(1))} seconds`;
         $('participantCount').textContent = `${lesson.people.length} participants`;
         $('stage').style.aspectRatio = `${motion.width} / ${motion.height}`;
       }
       frameCount = Math.ceil((motion.sourceEnd-motion.sourceStart)*motion.fps-1e-7);
       frameMap = new Map(motion.frames.map((frame,index) => [lesson.schemaVersion === 2 ? frame.frame : index,frame]));
-      document.querySelector('.time-row>span:last-child').textContent = `${motion.sourceEnd.toFixed(3)}s`;
+      document.querySelector('.time-row>span:last-child').textContent = `${clipRange()[1].toFixed(3)}s`;
       $('noteStart').min = String(motion.sourceStart); $('noteStart').max = String(motion.sourceEnd-1/motion.fps);
       $('noteEnd').min = String(motion.sourceStart+1/motion.fps); $('noteEnd').max = String(motion.sourceEnd);
       $('lessonTitle').textContent = lesson.title;
@@ -399,7 +414,7 @@
       if (site) $('lessonEyebrow').textContent = `${lesson.category.toUpperCase()} · MOVEMENT LESSON`;
       canvas.width = motion.width; canvas.height = motion.height;
       $('movementView').style.setProperty('--media-ratio',String(motion.width/motion.height));
-      $('scrub').max = String(frameCount-1);
+      $('scrub').min = String(firstFrame()); $('scrub').max = String(lastFrame());
       joints.forEach((name,index) => { const option = document.createElement('option'); option.value = String(index); option.textContent = name; $('noteJoint').append(option); });
       people.slice(1).forEach((person,index) => {
         const id = person.id || index+1, button = document.createElement('button'); button.type = 'button'; button.dataset.trackId = String(id);
@@ -410,9 +425,16 @@
       });
       renderList();
       const entryFrame = Number(query.get('frame'));
-      if (query.has('frame') && Number.isInteger(entryFrame) && entryFrame >= 0 && entryFrame < frameCount) {
-        if (video.readyState >= 1) seek(motion.sourceStart + entryFrame / motion.fps);
-        else video.addEventListener('loadedmetadata',() => seek(motion.sourceStart + entryFrame / motion.fps),{once:true});
+      const entryTime = query.has('frame') && Number.isInteger(entryFrame) && entryFrame >= 0 && entryFrame < frameCount
+        ? motion.sourceStart + entryFrame / motion.fps : clipRange()[0];
+      if (entryTime !== motion.sourceStart || clipRange()[0] !== motion.sourceStart) {
+        if (video.readyState >= 1) seek(entryTime);
+        else video.addEventListener('loadedmetadata',() => seek(entryTime),{once:true});
+      }
+      if (projectId && !site) {
+        fetch(`/api/projects/${encodeURIComponent(projectId)}/studio`,{cache:'no-store'}).then(response => response.ok ? response.json() : null).then(studio => {
+          $('sceneLink').hidden = $('sceneShortcut').hidden = !studio?.scene; render();
+        }).catch(() => {});
       }
       render(); fitViewer();
     } catch (failure) { $('videoError').textContent = failure.message; $('videoError').hidden = false; $('addNote').disabled = true;  }
@@ -421,18 +443,20 @@
   video.addEventListener('play',() => { updatePlayback(); if (!renderRequest) renderRequest = requestAnimationFrame(tick); });
   video.addEventListener('pause',render);
   video.addEventListener('seeking',render); video.addEventListener('seeked',render); video.addEventListener('timeupdate',render);
+  // Backup for the trim end when animation frames are paused (background tabs).
+  video.addEventListener('timeupdate',() => { if (motion && !video.paused && sourceTime() >= clipRange()[1]-.01) { video.pause(); seek(clipRange()[1]); } });
   video.addEventListener('error',() => { $('videoError').hidden = true; $('videoError').textContent = 'Video could not load. Reload the lesson to try again.'; $('videoError').hidden = false; });
   $('play').addEventListener('click',() => {
     if (!motion) return;
     if (!video.paused) video.pause();
-    else { if (playbackMode === 'passage' && selected && (sourceTime() >= selected.end-.01 || sourceTime() < selected.start)) seek(selected.start); else if (video.ended) seek(motion.sourceStart); play(); }
+    else { if (playbackMode === 'passage' && selected && (sourceTime() >= selected.end-.01 || sourceTime() < selected.start)) seek(selected.start); else if (video.ended || atClipEnd()) seek(clipRange()[0]); play(); }
   });
   $('scrub').addEventListener('input',() => { if (motion) { video.pause(); fullClipMode(); seek(motion.sourceStart + Number($('scrub').value)/motion.fps); } });
   $('previousFrame').addEventListener('click',() => { if (motion) { video.pause(); fullClipMode(); seek(motion.sourceStart+(frameIndex-1)/motion.fps); } });
   $('nextFrame').addEventListener('click',() => { if (motion) { video.pause(); fullClipMode(); seek(motion.sourceStart+(frameIndex+1)/motion.fps); } });
   $('speed').addEventListener('change',() => { video.playbackRate = Number($('speed').value); });
   $('replayPassage').addEventListener('click',() => { if (selected) { playbackMode = 'passage'; seek(selected.start); play(); } });
-  $('playFullClip').addEventListener('click',() => { fullClipMode(); $('play').focus({preventScroll:true}); if (video.ended) seek(motion.sourceStart); play(); });
+  $('playFullClip').addEventListener('click',() => { fullClipMode(); $('play').focus({preventScroll:true}); if (video.ended || atClipEnd()) seek(clipRange()[0]); play(); });
   $('loopPassage').addEventListener('change',() => {
     if (!selected) return;
     if ($('loopPassage').checked) {
@@ -470,7 +494,7 @@
   $('showAnnotationList').addEventListener('change',() => applyViews({...views, list:$('showAnnotationList').checked}));
   ['sceneLink','sceneShortcut'].forEach(id => $(id).addEventListener('click',event => {
     if (draft) { event.preventDefault(); toast('Save or cancel your annotation before opening the 3D scene.'); return; }
-    event.currentTarget.href = site ? site.link('scene.html',lesson.id,frameIndex) : `/scene.html?frame=${frameIndex}`;
+    event.currentTarget.href = sceneHref();
   }));
   $('closeDetail').addEventListener('click',closeDetail);
   $('jumpToNote').addEventListener('click',() => { if (selected) { video.pause(); seek(selected.start); if (innerWidth <= 900) $('stage').scrollIntoView({behavior:'smooth',block:'center'}); } });

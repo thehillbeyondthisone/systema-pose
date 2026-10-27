@@ -9,6 +9,7 @@ import {resolveStrikeLanding} from './strike-placement.js';
 import {ModelLibrary} from './model-library.js';
 import {ContactShadows} from './contact-shadows.js';
 import {SceneNavigation} from './scene-navigation.js';
+import {hasSourceCameraData,sourceIntrinsics} from './source-camera.mjs';
 let studioEnvironment=null;
 let studioLighting=null;
 let contactShadows=null;
@@ -74,9 +75,7 @@ function renderSceneFrame(){
 let sourceAspect=16/9;
 const sourceRotation=new THREE.Matrix4();
 function hasSourceCamera(){
-  const data=motion?.camera;
-  return Boolean(data?.Rcw?.length===frameCount&&data?.Tcw?.length===frameCount&&
-    Number.isFinite(data.img_focal)&&data.img_focal>0&&data.img_center?.length===2&&data.img_center.every(value=>Number.isFinite(value)&&value>0));
+  return hasSourceCameraData(motion?.camera,frameCount);
 }
 function setCameraButtons(name){
   document.querySelectorAll('[data-camera]').forEach(button=>{
@@ -87,7 +86,7 @@ function setCameraButtons(name){
 function updateCameraProjection(){
   camera.aspect=sourceAspect;
   if(sourceFollowing&&hasSourceCamera()){
-    const data=motion.camera,[cx,cy]=data.img_center,focal=data.img_focal;
+    const data=sourceIntrinsics(motion.camera,frame),[cx,cy]=data.img_center,focal=data.img_focal;
     const width=data.imageWidth||data.img_width||data.width||cx*2,height=data.imageHeight||data.img_height||data.height||cy*2;
     camera.fov=THREE.MathUtils.radToDeg(2*Math.atan(height/(2*focal)));
     camera.updateProjectionMatrix();
@@ -138,9 +137,17 @@ function changeContactSettings(){
 $('contactEffects').addEventListener('change',changeContactSettings);
 $('boneThickness').addEventListener('change',changeContactSettings);
 const site=window.SystemaSite;
+// Workstation lessons open as /scene.html?project=<id>; the published site uses ?clip=.
+const projectId=site?null:new URLSearchParams(location.search).get('project');
 let sourceStart=18, sourceEnd=30, fps=30, frameCount=360, siteLesson=null;
-const sceneStorageKey='systema-scene-view-v1';
-let sceneView=innerWidth<=600?'scene':'compare';
+// The playable range. A trim hides the footage before and after it without editing files.
+let trimFirst=0, trimLast=359;
+const trimmed=()=>trimFirst>0||trimLast<frameCount-1;
+const clipScopeLabel=()=>trimmed()?`Trimmed · ${(sourceStart+trimFirst/fps).toFixed(1)}–${(sourceStart+(trimLast+1)/fps).toFixed(1)}s`:'Full clip';
+let videoFrameOffset=0;
+const videoFrame=()=>Math.floor((video.currentTime-videoFrameOffset)*fps+0.001);
+const sceneStorageKey='systema-scene-view-v2';
+let sceneView='compare';
 try{const saved=localStorage.getItem(sceneStorageKey);if(['scene','video','compare'].includes(saved))sceneView=saved;}catch{}
 function fitSceneViewports(){
   const main=document.querySelector('.scene-main');
@@ -150,13 +157,15 @@ function fitSceneViewports(){
   const grid=$('sceneGrid');
   const toolbarHeight=Math.max(...[...grid.querySelectorAll('.view-toolbar')]
     .filter(toolbar=>toolbar.getClientRects().length).map(toolbar=>toolbar.getBoundingClientRect().height));
-  const available=innerHeight-(grid.getBoundingClientRect().top+scrollY)-toolbarHeight-$('sceneTransport').offsetHeight-30;
+  // Keep the Characters bar header in view under the stage, even when its rows are open.
+  const drawer=$('figureDetails'),drawerHeight=drawer.hidden?0:drawer.querySelector('summary').offsetHeight+12;
+  const available=innerHeight-(grid.getBoundingClientRect().top+scrollY)-toolbarHeight-$('sceneTransport').offsetHeight-drawerHeight-30;
   main.style.setProperty('--scene-stage-height',`${Math.max(200,Math.min(620,Math.floor(available)))}px`);
 }
 function applySceneView(value){
   sceneView=value;
   $('scenePanel').hidden=value==='video';$('sceneFootagePanel').hidden=value==='scene';
-  $('sceneDetailsPanel').hidden=value==='video';
+  $('sceneDetailsPanel').hidden=value==='video';$('figureDetails').hidden=value==='video';
   document.querySelector('.viewer-sync-label').hidden=value!=='compare'||!motion;
   $('orbitHelp').hidden=value==='video';$('sceneGrid').classList.toggle('single-view',value!=='compare');
   document.querySelectorAll('[data-scene-view]').forEach(button=>{
@@ -166,33 +175,51 @@ function applySceneView(value){
   fitSceneViewports();
 }
 document.querySelectorAll('[data-scene-view]').forEach(button=>button.addEventListener('click',()=>applySceneView(button.dataset.sceneView)));
-document.querySelectorAll('.lesson-return').forEach(link=>link.addEventListener('click',()=>{link.href=site&&siteLesson ? site.link('lesson.html',siteLesson.id,frame) : `/?demo=1&frame=${frame}`;}));
+const characterDrawerKey='systema-character-drawer-v1';
+try{if(localStorage.getItem(characterDrawerKey)==='closed')$('figureDetails').open=false;}catch{}
+$('figureDetails').addEventListener('toggle',()=>{try{localStorage.setItem(characterDrawerKey,$('figureDetails').open?'open':'closed');}catch{}});
+const lessonHref=()=>site&&siteLesson ? site.link('lesson.html',siteLesson.id,frame) : projectId ? `/?project=${encodeURIComponent(projectId)}&frame=${frame}` : `/?demo=1&frame=${frame}`;
+if(projectId){
+  // Library lessons open here first: the logo returns to the library, the button opens annotations.
+  const brand=document.querySelector('.brand.lesson-return');brand.classList.remove('lesson-return');brand.href='/';
+  const back=document.querySelector('.file-button.lesson-return');back.lastChild.textContent='Annotate in 2D';back.title='Open this moment in the 2D annotation view';
+}
+document.querySelectorAll('.lesson-return').forEach(link=>link.addEventListener('click',()=>{link.href=lessonHref();}));
 applySceneView(sceneView);
 window.addEventListener('resize',fitSceneViewports);
 const layoutObserver=new ResizeObserver(fitSceneViewports);
 document.querySelectorAll('.scene-heading,.scene-view-controls,.scene-grid .view-toolbar,#sceneTransport').forEach(element=>layoutObserver.observe(element));
 const entryFrame=Number(new URLSearchParams(location.search).get('frame'));
-if(!site&&Number.isInteger(entryFrame)&&entryFrame>=0&&entryFrame<frameCount){
+if(!site&&!projectId&&Number.isInteger(entryFrame)&&entryFrame>=0&&entryFrame<frameCount){
   if(video.readyState>=1)seek(entryFrame);
   else video.addEventListener('loadedmetadata',()=>seek(entryFrame),{once:true});
 }
 
 function sceneUnavailable(){
+  // Show the footage now, but keep the saved choice so 3D returns once a scene loads.
+  let saved=null;try{saved=localStorage.getItem(sceneStorageKey);}catch{}
   applySceneView('video');
+  try{if(saved)localStorage.setItem(sceneStorageKey,saved);else localStorage.removeItem(sceneStorageKey);}catch{}
   $('contactEffects').disabled=true;$('boneThickness').disabled=true;
   $('contactStatus').textContent='Contact effects need a reconstructed 3D scene.';
   document.querySelectorAll('[data-scene-view]').forEach(button=>{button.disabled=button.dataset.sceneView!=='video';});
 }
 
 function showFrame(index){
-  if(teachingPreviewEnd!==null&&index>=teachingPreviewEnd){
-    index=teachingPreviewEnd;video.pause();
-    if(video.currentTime>index/fps+1/fps)video.currentTime=index/fps;
+  const stop=teachingPreviewEnd!==null?Math.min(teachingPreviewEnd,trimLast):trimLast;
+  if(index>stop||(teachingPreviewEnd!==null&&index>=stop)){
+    index=stop;video.pause();
+    if(video.currentTime>videoFrameOffset+index/fps+1/fps)video.currentTime=videoFrameOffset+(index+.001)/fps;
+  }
+  if(index<trimFirst){
+    index=trimFirst;
+    if(!video.seeking&&video.readyState>=1)video.currentTime=videoFrameOffset+(index+.001)/fps;
   }
   frame=Math.max(0,Math.min(frameCount-1,index));scrub.value=frame;
   $('sceneTime').textContent=`${(sourceStart+frame/fps).toFixed(3)}s`;
   scrub.setAttribute('aria-valuetext',`${(sourceStart+frame/fps).toFixed(3)} source seconds`);
   if(!motion)return;
+  studioEnvironment?.syncFrame(frame);
   followSourceCamera();
   navigation?.setSubjects(visibleSubjects(),{follow:!sourceFollowing});
   const signature=JSON.stringify([frame,contactSettings,figureSettings,studioEnvironment?.ready&&studioEnvironment?.visible,studioEnvironment?.xray,[...objects.values()].map(object=>object.checkbox.checked)]);
@@ -334,19 +361,57 @@ function showContacts(){
     $('contactList').append(item);
   }
 }
-function clearTeachingPreview(){teachingPreviewEnd=null;$('scenePlaybackScope').textContent='Full clip';$('sceneFullPlayback').hidden=true;}
-function seek(index){clearTeachingPreview();video.pause();video.currentTime=Math.max(0,Math.min(frameCount-1,index))/fps;showFrame(index);}
+function applyTrim(start,end){
+  const valid=Number.isFinite(start)&&Number.isFinite(end)&&start<end;
+  trimFirst=valid?Math.max(0,Math.min(frameCount-1,Math.round((start-sourceStart)*fps))):0;
+  trimLast=valid?Math.max(trimFirst,Math.min(frameCount-1,Math.round((end-sourceStart)*fps)-1)):frameCount-1;
+  scrub.min=String(trimFirst);scrub.max=String(trimLast);
+  if(teachingPreviewEnd===null)$('scenePlaybackScope').textContent=clipScopeLabel();
+  $('trimSummary').textContent=clipScopeLabel();
+  $('trimStart').value=(sourceStart+trimFirst/fps).toFixed(1);$('trimEnd').value=(sourceStart+(trimLast+1)/fps).toFixed(1);
+  if(video.readyState>=1&&(frame<trimFirst||frame>trimLast))seek(frame);
+}
+// Teachers on this PC can trim workstation lessons. Students never see these controls.
+async function setupTrimEditor(){
+  let token;
+  try{const response=await fetch('/api/admin/token',{cache:'no-store'});if(!response.ok)return;token=(await response.json()).token;}catch{return;}
+  if(!token)return;
+  const editor=$('trimEditor'),status=$('trimStatus');editor.hidden=false;
+  for(const input of [$('trimStart'),$('trimEnd')]){input.min=String(sourceStart);input.max=sourceEnd.toFixed(1);}
+  const current=()=>(sourceStart+frame/fps).toFixed(1);
+  $('trimStartHere').addEventListener('click',()=>{$('trimStart').value=current();status.textContent='Start set. Save to apply.';});
+  $('trimEndHere').addEventListener('click',()=>{$('trimEnd').value=current();status.textContent='End set. Save to apply.';});
+  async function save(body){
+    status.textContent='Saving…';
+    try{
+      const response=await fetch(`/api/admin/lessons/${encodeURIComponent(projectId)}/trim`,{method:'POST',headers:{'Content-Type':'application/json','X-Systema-Admin-Token':token},body:JSON.stringify(body)});
+      const result=await response.json();
+      if(!response.ok)throw Error(result.error||'Trim could not be saved.');
+      siteLesson.trimStart=result.trimStart??undefined;siteLesson.trimEnd=result.trimEnd??undefined;
+      applyTrim(result.trimStart,result.trimEnd);
+      if(body.clear)status.textContent='Showing the full clip. Pick new trim points, then save.';
+      else{status.textContent=`${result.message} Students see ${clipScopeLabel().replace('Trimmed · ','')}.`;seek(trimFirst);}
+    }catch(error){status.textContent=error.message;}
+  }
+  $('trimSave').addEventListener('click',()=>save({start:Number($('trimStart').value),end:Number($('trimEnd').value)}));
+  $('trimClear').addEventListener('click',()=>save({clear:true}));
+}
+function clearTeachingPreview(){teachingPreviewEnd=null;$('scenePlaybackScope').textContent=clipScopeLabel();$('sceneFullPlayback').hidden=true;}
+function seek(index){
+  clearTeachingPreview();video.pause();index=Math.max(trimFirst,Math.min(trimLast,index));
+  video.currentTime=videoFrameOffset+(index+.001)/fps;showFrame(index);
+}
 $('sceneFullPlayback').addEventListener('click',()=>{clearTeachingPreview();video.play().catch(()=>{$('sceneStatus').textContent='Tap Play to continue the footage.';});});
 scrub.addEventListener('input',()=>seek(Number(scrub.value)));
 $('scenePrevious').addEventListener('click',()=>seek(frame-1));
 $('sceneNext').addEventListener('click',()=>seek(frame+1));
 $('sceneSpeed').addEventListener('change',()=>video.playbackRate=Number($('sceneSpeed').value));
-video.addEventListener('timeupdate',()=>showFrame(Math.floor(video.currentTime*fps+0.001)));
-video.addEventListener('seeked',()=>showFrame(Math.floor(video.currentTime*fps+0.001)));
+video.addEventListener('timeupdate',()=>showFrame(videoFrame()));
+video.addEventListener('seeked',()=>showFrame(videoFrame()));
 $('scenePlay').addEventListener('click',async()=>{
   if(!video.paused){video.pause();return;}
   if(teachingPreviewEnd===null||frame>=teachingPreviewEnd)clearTeachingPreview();
-  try{if(video.ended)seek(0);await video.play();}catch{$('sceneStatus').textContent='Tap Play again to start the footage.';}
+  try{if(video.ended||frame>=trimLast)seek(trimFirst);await video.play();}catch{$('sceneStatus').textContent='Tap Play again to start the footage.';}
 });
 function playbackIcon(){
   const playing=!video.paused&&!video.ended;
@@ -385,7 +450,7 @@ document.addEventListener('keydown',event=>{
     event.preventDefault();$(event.code==='ArrowLeft'?'scenePrevious':'sceneNext').click();
   }
 });
-function sync(){if(!video.paused)showFrame(Math.floor(video.currentTime*fps+0.001));requestAnimationFrame(sync);}sync();
+function sync(){if(!video.paused)showFrame(videoFrame());requestAnimationFrame(sync);}sync();
 
 function preset(name){
   applyingCameraPreset=true;
@@ -427,25 +492,33 @@ function validate(data){
 }
 async function load(){
   try{
-    if(site){
-      siteLesson=await site.lesson();
-      sourceStart=siteLesson.sourceStart;sourceEnd=siteLesson.sourceEnd;fps=siteLesson.fps;
-      frameCount=Math.ceil((sourceEnd-sourceStart)*fps-1e-7);scrub.max=String(frameCount-1);
-      document.querySelector('h1').textContent=siteLesson.title;
-      document.querySelector('.lesson-heading .eyebrow').textContent=`${siteLesson.category.toUpperCase()} · 3D SCENE`;
-      document.querySelectorAll('.lesson-return').forEach(link=>{link.href=site.link('lesson.html',siteLesson.id);});
-      video.src=siteLesson.video;
-      if(Number.isInteger(entryFrame)&&entryFrame>=0&&entryFrame<frameCount){
-        if(video.readyState>=1)seek(entryFrame);
-        else video.addEventListener('loadedmetadata',()=>seek(entryFrame),{once:true});
+    if(site||projectId){
+      if(site)siteLesson=await site.lesson();
+      else{
+        const lessonResponse=await fetch(`/api/projects/${encodeURIComponent(projectId)}/studio`,{cache:'no-store'});
+        if(!lessonResponse.ok)throw Error('This lesson could not load. Return to the lesson library.');
+        siteLesson=await lessonResponse.json();
       }
+      sourceStart=siteLesson.sourceStart;sourceEnd=siteLesson.sourceEnd;fps=siteLesson.fps;
+      videoFrameOffset=siteLesson.videoFrameOffset||0;
+      frameCount=Math.ceil((sourceEnd-sourceStart)*fps-1e-7);
+      applyTrim(siteLesson.trimStart,siteLesson.trimEnd);
+      document.querySelector('h1').textContent=siteLesson.title;
+      document.title=`Systema · ${siteLesson.title}`;
+      document.querySelector('.lesson-heading .eyebrow').textContent=`${siteLesson.category.toUpperCase()} · 3D SCENE`;
+      document.querySelectorAll('.lesson-return').forEach(link=>{link.href=lessonHref();});
+      video.src=siteLesson.video;
+      const start=Number.isInteger(entryFrame)&&entryFrame>=0&&entryFrame<frameCount?entryFrame:trimFirst;
+      if(video.readyState>=1)seek(start);
+      else video.addEventListener('loadedmetadata',()=>seek(start),{once:true});
+      if(projectId)setupTrimEditor();
       if(!siteLesson.scene)throw Error('This clip has 2D motion only. Return to the lesson to study it.');
     }
-    const response=await fetch(site?siteLesson.scene:'/3d-pilot/scene.json',{cache:'no-store'});
+    const response=await fetch(siteLesson?siteLesson.scene:'/3d-pilot/scene.json',{cache:'no-store'});
     if(response.status===404){$('sceneStatus').textContent='The shared 3D reconstruction is not ready yet. You can review the current footage here.';sceneUnavailable();return;}
     if(!response.ok)throw Error('Scene could not be loaded.');
     const data=await response.json();validate(data);
-    const manifest=await (await fetch(site?siteLesson.manifest:'/3d-pilot/manifest.json',{cache:'no-store'})).json();
+    const manifest=await (await fetch(siteLesson?siteLesson.manifest:'/3d-pilot/manifest.json',{cache:'no-store'})).json();
     if(data.sourceSha256!==manifest.sha256)throw Error('Scene and footage do not match.');
     const expected=manifest.reconstruction?.expectedParticipants;
     if(Number.isInteger(expected)&&data.people.length!==expected)throw Error(`The scene is being extended to all ${expected} participants.`);
@@ -464,7 +537,8 @@ async function load(){
         figureSettings={defaultStyle:saved.defaultStyle,participants:Object.fromEntries(Object.entries(saved.participants).filter(([id,style])=>data.people.some(person=>String(person.id)===id)&&validStyle(style)))};
       }
     }catch{}
-    if(motion.camera?.img_center?.every(value=>Number.isFinite(value)&&value>0))sourceAspect=motion.camera.img_center[0]/motion.camera.img_center[1];
+    const initialCamera=sourceIntrinsics(motion.camera,0);
+    if(initialCamera?.img_center?.every(value=>Number.isFinite(value)&&value>0))sourceAspect=initialCamera.img_center[0]/initialCamera.img_center[1];
     const stage=$('orbitStage');world=new THREE.Scene();world.background=new THREE.Color('#142234');
     studioLighting=new StudioLighting(world);
     contactShadows=new ContactShadows({world,motion});
@@ -505,19 +579,27 @@ async function load(){
       }
       group.add(solid);
       const rig=new FigureRig({jointNames:motion.jointNames,edges:motion.edges,color});group.add(rig.group);
-      const label=document.createElement('label'), checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=true;
-      label.className='check';label.style.setProperty('--participant-color',color);
-      const key=document.createElement('span');key.className='participant-key';key.setAttribute('aria-hidden','true');
-      const visibleName=document.createElement('span');visibleName.textContent=person.name;visibleName.dataset.participantName=String(person.id);
-      label.append(checkbox,key,visibleName);$('scenePeople').append(label);
-      checkbox.addEventListener('change',()=>showFrame(frame));objects.set(String(person.id),{group,bones,joints,checkbox,solid,solidBones,solidJoints,color,rig,customRigs:new Map(),customUpdates:new Map()});
+      // One compact row per person: show/hide, rename, and figure style.
       const styleLabel=document.createElement('div'),select=document.createElement('select');
       styleLabel.className='figure-person';styleLabel.style.setProperty('--participant-color',color);
+      const label=document.createElement('label'), checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=true;
+      label.className='check figure-visibility';label.title='Show or hide this person';
+      checkbox.setAttribute('aria-label',`Show ${person.name}`);
+      const key=document.createElement('span');key.className='participant-key';key.setAttribute('aria-hidden','true');
+      label.append(checkbox,key);
+      // Collapsed summary chip, so the current choices stay visible when the drawer is closed.
+      const chip=document.createElement('span');chip.className='character-chip';chip.style.setProperty('--participant-color',color);chip.dataset.chipFor=String(person.id);
+      const chipKey=document.createElement('span');chipKey.className='participant-key';
+      const visibleName=document.createElement('span');visibleName.className='character-chip-name';visibleName.textContent=person.name;visibleName.dataset.participantName=String(person.id);
+      const chipStyle=document.createElement('span');chipStyle.className='character-chip-style';
+      chip.append(chipKey,visibleName,chipStyle);$('characterChips').append(chip);
+      checkbox.addEventListener('change',()=>{chip.classList.toggle('hidden-person',!checkbox.checked);showFrame(frame);});
+      objects.set(String(person.id),{group,bones,joints,checkbox,solid,solidBones,solidJoints,color,rig,customRigs:new Map(),customUpdates:new Map()});
       const name=document.createElement('input');name.type='text';name.value=person.name;name.maxLength=48;
       name.className='character-name';name.dataset.characterName=String(person.id);name.setAttribute('aria-label',`Name for character ${person.id}`);name.title='Rename character';
       name.addEventListener('change',()=>{
         person.name=name.value.replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,48)||person.originalName;name.value=person.name;
-        visibleName.textContent=person.name;select.setAttribute('aria-label',`Figure style for ${person.name}`);
+        visibleName.textContent=person.name;select.setAttribute('aria-label',`Figure style for ${person.name}`);checkbox.setAttribute('aria-label',`Show ${person.name}`);
         try{localStorage.setItem(characterNamesKey,JSON.stringify(Object.fromEntries(motion.people.map(person=>[String(person.id),person.name]))));$('characterNameStatus').textContent='Character names saved in this browser.';}
         catch{$('characterNameStatus').textContent='Names changed for this tab. Browser storage is unavailable.';}
         modelLibrary?.refreshParticipantNames();strikeCues?.refreshParticipantNames();showContacts();
@@ -527,11 +609,15 @@ async function load(){
       for(const [value,title] of Object.entries(figureStyles))select.add(new Option(title,value));
       select.value=effectiveStyle(person.id);
       select.addEventListener('change',()=>{figureSettings.participants[String(person.id)]=select.value;updateFigureStyles();});
-      styleLabel.append(name,select);$('figurePeople').append(styleLabel);
+      styleLabel.append(label,name,select);$('scenePeople').append(styleLabel);
     }
     function updateFigureStyles(){
-      const values=[...$('figurePeople').querySelectorAll('select')].map(select=>select.value);
+      const selects=[...$('scenePeople').querySelectorAll('select')],values=selects.map(select=>select.value);
       $('figureStyle').value=values.every(value=>value===values[0])?values[0]:'mixed';
+      for(const select of selects){
+        const chip=document.querySelector(`[data-chip-for="${select.id.slice('figure-style-'.length)}"] .character-chip-style`);
+        if(chip)chip.textContent=select.selectedOptions[0]?.textContent||'';
+      }
       try{localStorage.setItem(figureStorageKey,JSON.stringify(figureSettings));}catch{}
       displayedFrameSignature='';showFrame(frame);
     }
@@ -570,7 +656,7 @@ async function load(){
     $('figureStyle').disabled=false;
     $('figureStyle').addEventListener('change',()=>{
       figureSettings={defaultStyle:$('figureStyle').value,participants:{}};
-      for(const select of $('figurePeople').querySelectorAll('select'))select.value=figureSettings.defaultStyle;
+      for(const select of $('scenePeople').querySelectorAll('select'))select.value=figureSettings.defaultStyle;
       updateFigureStyles();
     });
     strikeCues=new StrikeCues({world,motion,storageKey:`systema-strikes-v1:${location.pathname}:${motion.sourceSha256}`,container:$('strikeCueEditor'),
@@ -595,9 +681,9 @@ async function load(){
     if(video.error)showVideoError();
     applySceneView(sceneView);
     function render(){if(!sourceFollowing){orbit.update();navigation.constrain(studioEnvironment);}renderSceneFrame();requestAnimationFrame(render);}render();
-    const configUrl=site?siteLesson.environment:'studio/environment.json';
+    const configUrl=siteLesson?siteLesson.environment:'studio/environment.json';
     if(configUrl){
-      studioEnvironment=new StudioEnvironment({world,renderer,camera,orbit,canvas:renderer.domElement,grid,motion,configUrl,onChange:()=>showFrame(frame)});
+      studioEnvironment=new StudioEnvironment({world,renderer,camera,orbit,canvas:renderer.domElement,grid,motion,configUrl,initialFrame:frame,onChange:()=>showFrame(frame)});
     }else{
       $('studioStatus').textContent='This lesson has no registered studio scan.';
       $('studioRetry').hidden=true;

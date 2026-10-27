@@ -24,7 +24,7 @@ function pass(value){report.checks.push(value);console.log('PASS '+value);}
   const remote=[];page.on('request',r=>{if(/^https?:/.test(r.url())&&!r.url().startsWith(BASE))remote.push(r.url());});
   async function ready(){await page.waitForFunction(()=>document.getElementById('studioStatus').dataset.state==='ready',{timeout:60000});}
   await page.goto(BASE+'/scene.html');await ready();
-  assert.equal(await page.locator('#scenePeople input').count(),4);
+  assert.equal(await page.locator('#scenePeople input[type=checkbox]').count(),4);
   assert.equal(await page.locator('#studioBadge').innerText(),studioConfig.calibration?'Matched to footage':'Alignment estimate');
   assert.equal(remote.length,0);pass('Local Gaussian scan loads alongside four participants without CDN requests');
   assert.equal(await page.locator('#studio-x').inputValue(),String(Math.round(initial.x*10000)/10000));
@@ -94,7 +94,7 @@ function pass(value){report.checks.push(value);console.log('PASS '+value);}
   const failure=await context.newPage();failure.on('pageerror',e=>report.errors.push(e.message));
   await failure.route('**/studio.splat*',route=>route.fulfill({status:404,body:'missing'}));
   await failure.goto(BASE+'/scene.html');await failure.waitForFunction(()=>document.getElementById('studioStatus').dataset.state==='error');
-  assert.equal(await failure.locator('#scenePeople input').count(),4);assert.equal(await failure.locator('#scenePlay').isEnabled(),true);
+  assert.equal(await failure.locator('#scenePeople input[type=checkbox]').count(),4);assert.equal(await failure.locator('#scenePlay').isEnabled(),true);
   await failure.unroute('**/studio.splat*');await failure.locator('#studioRetry').click();
   await failure.waitForFunction(()=>document.getElementById('studioStatus').dataset.state==='ready',{timeout:60000});
   pass('Missing scan leaves motion usable and Retry recovers without reloading');

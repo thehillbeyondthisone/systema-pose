@@ -134,7 +134,7 @@ async function dialogFits(page) {
     assert.equal(Number(await page.locator('#contactStatus').getAttribute('data-count')),thinContacts);
     await page.locator('#boneThickness').selectOption('0.05');
     assert(Number(await page.locator('#contactStatus').getAttribute('data-count'))>=thinContacts);
-    const peopleControls=await page.locator('#scenePeople input').all();
+    const peopleControls=await page.locator('#scenePeople input[type=checkbox]').all();
     for(const input of peopleControls.slice(1))await input.uncheck();
     assert.equal(await page.locator('#contactStatus').getAttribute('data-count'),'0');
     for(const input of peopleControls.slice(1))await input.check();

@@ -84,6 +84,7 @@ export class StrikeCues{
     this.container=container;container.replaceChildren();
     const root=element('div','strike-cues');this.root=root;container.append(root);
     this.mountEstimates(root);
+    root.append(element('p','strike-help','Missed a strike? Pause the footage at contact, then create a cue at this frame. For a mitt, choose the holder’s left or right wrist as the target and adjust its offset if needed. Cue edits do not require reconstruction.'));
     root.append(element('p','strike-note',NOTE));
     const controls=element('div','strike-controls');
     const enabledLabel=element('label','strike-toggle');
@@ -107,6 +108,7 @@ export class StrikeCues{
     const participants=this.motion.people.map(person=>[String(person.id),person.name||`Participant ${person.id}`]);
     addField('Name','Cue name','text').maxLength=80;
     const placement=addField('Frame','Placement frame','number');placement.min='0';placement.max=String(this.identity.frameCount-1);placement.step='1';
+    placement.parentElement.append(button('Use current frame',()=>{placement.value=String(this.frame);}));
     addField('Striker','Striking participant','select',participants);
     addField('Limb','Striking limb','select',LIMBS.filter(([joint])=>this.motion.jointNames.includes(joint)));
     addField('Target','Target participant','select',participants);

@@ -1,10 +1,72 @@
 """WSL worker for one dashboard passage. Runs the real, installed PromptHMR pipeline."""
 import argparse
 import json
+import math
+from numbers import Integral
 import os
 from pathlib import Path
 import signal
 import sys
+import time
+
+
+def write_progress(output, label):
+    """OneDrive/Windows readers must not abort an expensive GPU run."""
+    temp = output / 'progress.tmp'
+    for attempt in range(5):
+        try:
+            temp.write_text(json.dumps({'message': label}), encoding='utf-8')
+            temp.replace(output / 'progress.json')
+            return True
+        except PermissionError:
+            if attempt < 4:time.sleep(.05)
+    print('Progress file is temporarily locked; continuing reconstruction.', flush=True)
+    return False
+
+
+def validate_participant_ids(actual_ids, motion):
+    """Fail before reference metadata could conceal dropped or reassigned IDs."""
+    expected = {person['id']: person['name'] for person in motion['people']}
+    if any(not isinstance(identity, Integral) or isinstance(identity, bool) for identity in actual_ids):
+        raise ValueError('3D reconstruction returned invalid or duplicate participant IDs. Review the selected tracks and retry.')
+    actual_ids = [int(identity) for identity in actual_ids]
+    if len(actual_ids) != len(set(actual_ids)):
+        raise ValueError('3D reconstruction returned invalid or duplicate participant IDs. Review the selected tracks and retry.')
+    actual = set(actual_ids)
+    if actual != set(expected):
+        details = []
+        missing = sorted(set(expected) - actual); extra = sorted(actual - set(expected))
+        if missing:details.append('Missing: ' + ', '.join(f'{expected[identity]} (ID {identity})' for identity in missing))
+        if extra:details.append('Unexpected IDs: ' + ', '.join(map(str, extra)))
+        raise ValueError('3D reconstruction did not preserve the selected participants. ' + '; '.join(details)
+                         + '. Review Participants & tracks, exclude brief detections or join fragments, then retry.')
+    return expected
+
+
+def validate_participants(scene, motion):
+    """Require measured, finite 3D observations for every selected participant."""
+    expected = validate_participant_ids([person.get('id') for person in scene.get('people', [])], motion)
+    counts = dict.fromkeys(expected, 0)
+    joints = len(scene.get('jointNames', []))
+    if not joints:raise ValueError('3D reconstruction returned no skeleton joints. Retry this passage.')
+    for index, frame in enumerate(scene.get('frames', [])):
+        seen = set()
+        for person in frame.get('people', []):
+            identity = person.get('id')
+            if type(identity) is not int or identity not in expected or identity in seen:
+                raise ValueError(f'3D reconstruction returned an unexpected or duplicate participant in frame {index}. Review the selected tracks and retry.')
+            seen.add(identity)
+            xyz = person.get('xyz')
+            if (not isinstance(xyz, list) or len(xyz) != joints
+                    or any(not isinstance(point, list) or len(point) != 3
+                           or any(type(value) not in (int, float) or not math.isfinite(value) for value in point) for point in xyz)):
+                raise ValueError(f'3D reconstruction returned incomplete or nonfinite joints for {expected[identity]} (ID {identity}) in frame {index}. Retry this passage.')
+            counts[identity] += 1
+    short = [f'{expected[identity]} (ID {identity}: {count} frame(s))' for identity, count in counts.items() if count < 2]
+    if short:
+        raise ValueError('3D reconstruction needs at least two actual 3D frames for every selected participant. '
+                         + '; '.join(short) + '. Review Participants & tracks, exclude brief detections or join fragments, then retry.')
+    return scene
 
 
 def bind_tracks(pipeline, motion):
@@ -54,6 +116,7 @@ def bind_tracks(pipeline, motion):
 
 
 def annotate(scene, motion):
+    validate_participants(scene, motion)
     from annotate_3d_quality import annotate_tracking_quality
     # Adapter preserves existing quality semantics without modifying measured XYZ.
     rows = [{'people': [{'track_id': p['id'], 'bbox_xyxy': p['bbox'][:4]} for p in row['people']]}
@@ -63,9 +126,7 @@ def annotate(scene, motion):
 
 def install_progress(pipeline, output):
     def update(label):
-        temp = output / 'progress.tmp'
-        temp.write_text(json.dumps({'message': label}), encoding='utf-8')
-        temp.replace(output / 'progress.json')
+        write_progress(output, label)
         print(label, flush=True)
 
     phases = {'load_frames': 'Loading passage frames', 'run_detect_track': 'Preparing participants and foreground masks',
@@ -76,6 +137,9 @@ def install_progress(pipeline, output):
         original = getattr(pipeline, name)
         def tracked(*args, _original=original, _label=label, _name=name, **kwargs):
             update(_label)
+            if _name in ('world_hps_estimation', 'post_optimization'):
+                from bounded_body_model import bound_body_model
+                bound_body_model(pipeline.smplx)
             if _name == 'hps_estimation':
                 # Fresh camera estimation can leave cyclic SLAM/model objects.
                 # Release unreachable GPU buffers before the larger body models load.
@@ -96,7 +160,8 @@ def install_progress(pipeline, output):
             for batch in self.loader:
                 yield batch
                 completed += len(batch)
-                update(f'Reconstructing body frames: {completed} of {len(self.loader.dataset)}')
+                if completed == 1 or completed % 15 == 0 or completed == len(self.loader.dataset):
+                    update(f'Reconstructing body frames: {completed} of {len(self.loader.dataset)}')
             update('Refining participant motion over time')
     phmr_vid.DataLoader = lambda *args, **kwargs: ProgressLoader(original_loader(*args, **kwargs))
 

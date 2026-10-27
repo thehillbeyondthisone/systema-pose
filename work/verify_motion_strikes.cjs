@@ -22,7 +22,7 @@ let browser,server;
  page.on('response',response=>{if(response.status()>=400&&!response.url().endsWith('favicon.ico'))report.failed.push(response.url());});
  await page.route(new URL('scene.js',BASE).href,async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text())+'\nwindow.__strikeTest=()=>({objects,motion,frame,strikeCues,modelLibrary,THREE});'});});
  await page.goto(BASE+'scene.html?clip=multiple-attackers&frame=128');
- await page.waitForFunction(()=>window.__strikeTest?.().strikeCues&&document.getElementById('studioStatus').dataset.state==='ready'&&document.querySelectorAll('.builtin-model-card [data-model-readiness="ready"]').length===3&&document.getElementById('sceneVideo').readyState>=2);
+ await page.waitForFunction(()=>window.__strikeTest?.().strikeCues&&document.getElementById('studioStatus').dataset.state==='ready'&&document.querySelectorAll('.builtin-model-card').length>0&&document.querySelectorAll('.builtin-model-card [data-model-readiness="ready"]').length===document.querySelectorAll('.builtin-model-card').length&&document.getElementById('sceneVideo').readyState>=2);
  const events=await page.evaluate(()=>window.__strikeTest().strikeCues.estimates);
  assert(events.length>0&&events.length<40);assert.equal(await page.locator('.strike-estimate-item').count(),events.length);
  assert.match(await page.locator('.strike-estimate-summary').textContent(),/blocks|grabs/);
@@ -67,8 +67,8 @@ let browser,server;
  const event=examples[1]||events[0];await scrub(event.frame);
  await page.locator('#strikeCueEstimatedEnabled').uncheck();assert.equal(await page.locator('#orbitStage canvas').getAttribute('data-estimated-strike-count'),'0');assert(!(await page.locator('#strikeEstimateHud').isVisible()));
  await page.locator('#strikeCueEstimatedEnabled').check();
- await page.locator(`#scenePeople input[value="${event.targetId}"]`).count().then(async count=>{
-  const input=count?page.locator(`#scenePeople input[value="${event.targetId}"]`):page.locator('#scenePeople input').nth(Number(event.targetId)-1);
+ await page.locator(`#scenePeople input[type=checkbox][value="${event.targetId}"]`).count().then(async count=>{
+  const input=count?page.locator(`#scenePeople input[type=checkbox][value="${event.targetId}"]`):page.locator('#scenePeople input[type=checkbox]').nth(Number(event.targetId)-1);
   await input.uncheck();assert(!await page.evaluate(id=>window.__strikeTest().strikeCues.getActiveEstimates().some(event=>event.id===id),event.id));await input.check();
  });
  pass('Estimate toggle and participant visibility remove their overlays immediately');

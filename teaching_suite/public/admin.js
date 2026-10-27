@@ -1,13 +1,23 @@
 const $=id=>document.getElementById(id);
 let state=null,selected=null,editorId=null,lastState='',pending=false,activePassage=0,lastJobNotice='',previewShown='',reviewClipId=null;
-const cameraChoices=new Map(),reviewChecks=new Map();
+const cameraChoices=new Map(),reviewChecks=new Map(),reconstructionErrors=new Map();
+const participantEditor=new ParticipantEditor({save:api,onSaved:async result=>{reviewChecks.clear();reconstructionErrors.clear();$('reviewedPreview').checked=false;await refresh();message(result.message||'Participant corrections saved. Reconstruct this passage to generate matching 3D.');}});
 const element=(tag,text,className='')=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;};
 function message(text,error=false){$('adminStatus').textContent=text;$('adminStatus').dataset.error=String(error);}
 async function api(path,body){
   const response=await fetch('/api/admin/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-Systema-Admin-Token':state.token},body:JSON.stringify(body)});
   const value=await response.json();if(!response.ok)throw Error(value.error||'The action could not be completed.');return value;
 }
-async function action(callback){try{pending=true;controls();await callback();await refresh();}catch(error){message(error.message,true);}finally{pending=false;controls();}}
+async function action(callback,clipId=null){
+  try{pending=true;if(clipId)reconstructionErrors.delete(clipId);controls();await callback();await refresh();}
+  catch(error){
+    if(clipId){
+      reconstructionErrors.set(clipId,error.message);render();
+      const notice=$('reconstruct-error-'+clipId);notice?.focus();notice?.scrollIntoView({behavior:'smooth',block:'nearest'});
+    }
+    message(error.message,true);
+  }finally{pending=false;controls();}
+}
 const current=()=>state?.lessons.find(lesson=>lesson.id===selected);
 function saveEditor(){
   if(!editorId)return;
@@ -16,6 +26,17 @@ function saveEditor(){
   try{localStorage.setItem('systema-admin-draft-v1:'+editorId,JSON.stringify(draft));}catch{}
 }
 function readEditor(id){try{return JSON.parse(localStorage.getItem('systema-admin-draft-v1:'+id))||{};}catch{return {};}}
+function reconstructionBlocker(){
+  if(pending)return 'Wait for the current action to finish.';
+  if(state?.threeD.status==='checking')return 'Checking the workstation. Reconstruction will be available when the GPU check passes.';
+  if(state?.jobs.some(job=>job.status==='running'))return 'Wait for the current workstation job to finish.';
+  const runtime=state?.threeD;
+  if(runtime?.gpuPaused)return 'GPU use is paused. Choose Enable & check GPU in Processing workstation above.';
+  if(runtime?.ready)return '';
+  if(runtime?.status==='installed')return 'GPU execution has not been checked. Choose Check GPU execution in Processing workstation above.';
+  if(runtime?.status==='unchecked')return 'Choose Enable & check GPU in Processing workstation above before reconstructing.';
+  return 'Resolve the requirements shown under Processing workstation, then check GPU execution again.';
+}
 function controls(){
   const lesson=current(),working=state?.jobs.some(job=>job.status==='running'),locked=lesson&&['queued','processing','ready'].includes(lesson.status);
   $('prepareVideo').disabled=pending||!lesson||locked||!state?.processingAvailable;
@@ -30,7 +51,10 @@ function controls(){
   $('enableGpu').disabled=pending||working;
   $('pauseGpu').disabled=pending;
   $('importRoom').disabled=pending||working;
-  for(const button of document.querySelectorAll('[data-reconstruct]'))button.disabled=pending||working||!state?.threeD.ready;
+  const reconstructionReason=reconstructionBlocker();
+  for(const button of document.querySelectorAll('[data-reconstruct]')){button.disabled=Boolean(reconstructionReason);button.title=reconstructionReason;}
+  for(const hint of document.querySelectorAll('[data-reconstruct-hint]')){hint.textContent=reconstructionReason;hint.hidden=!reconstructionReason;}
+  for(const button of document.querySelectorAll('[data-edit-tracks]'))button.disabled=pending||working;
   for(const button of document.querySelectorAll('[data-approve3d]'))button.disabled=pending||working||!reviewChecks.get(button.dataset.approve3d);
 }
 function passageRow(segment){
@@ -70,14 +94,23 @@ function render(){
   for(const clip of state.clips.filter(clip=>state.staged.includes(clip.id))){
     const reconstruction=state.reconstructions?.[clip.id],running=reconstruction?.status==='running';
     const card=element('article');card.dataset.clipId=clip.id;card.append(element('h3',clip.title),element('p',reconstruction?.message||(clip.scene?'2D + matching 3D scene':'2D ready · reconstruct this passage in 3D')));
+    const editTracks=element('button','Choose participants & correct tracks');editTracks.dataset.editTracks=clip.id;editTracks.addEventListener('click',()=>participantEditor.open(clip));card.append(element('p',`${clip.people.length} participant${clip.people.length===1?'':'s'} selected for reconstruction`),editTracks);
     if(running){const progress=element('progress');progress.removeAttribute('value');progress.setAttribute('aria-label','3D reconstruction running');card.append(progress);}
     const cameraLabel=element('label','Camera movement','admin-camera'),camera=element('select');
     for(const [value,title] of [['moving','Estimate camera motion'],['static','Fixed camera (tripod)']]){const option=element('option',title);option.value=value;camera.append(option);}
     camera.value=cameraChoices.get(clip.id)||reconstruction?.camera||'moving';camera.disabled=running;camera.addEventListener('change',()=>cameraChoices.set(clip.id,camera.value));cameraLabel.append(camera);card.append(cameraLabel);
     const actions=element('div',undefined,'admin-actions'),start=element('button',reconstruction?'Reconstruct again':'Reconstruct 3D');start.dataset.reconstruct=clip.id;
-    start.addEventListener('click',()=>action(async()=>{await api(`clips/${clip.id}/reconstruct`,{camera:camera.value});reviewChecks.delete(clip.id);$('reviewedPreview').checked=false;message('3D reconstruction started. Progress appears here; you can cancel and retry.');}));actions.append(start);
+    start.addEventListener('click',()=>action(async()=>{await api(`clips/${clip.id}/reconstruct`,{camera:camera.value});reviewChecks.delete(clip.id);$('reviewedPreview').checked=false;message('3D reconstruction started. Progress appears here; you can cancel and retry.');},clip.id));actions.append(start);
     if(running){const cancel=element('button','Cancel');cancel.addEventListener('click',()=>action(async()=>message((await api(`clips/${clip.id}/cancel`,{})).message)));actions.append(cancel);}
-    card.append(actions);
+    const reconstructionHint=element('p',undefined,'helper');reconstructionHint.dataset.reconstructHint=clip.id;reconstructionHint.id='reconstruct-hint-'+clip.id;reconstructionHint.setAttribute('role','status');start.setAttribute('aria-describedby',reconstructionHint.id);
+    card.append(actions,reconstructionHint);
+    const reconstructionError=reconstructionErrors.get(clip.id)||(reconstruction?.status==='failed'?reconstruction.message:null);
+    if(reconstructionError){
+      const notice=element('div',undefined,'admin-reconstruction-error');notice.id='reconstruct-error-'+clip.id;notice.setAttribute('role','alert');notice.tabIndex=-1;
+      notice.append(element('strong',reconstruction?.status==='failed'?'Reconstruction stopped':'Reconstruction could not start'),element('p',reconstructionError));
+      if(reconstructionError.includes('tracked frames'))notice.append(element('p','Open Choose participants & correct tracks to exclude brief background detections or join fragments of the same person, then reconstruct again.'));
+      card.append(notice);
+    }
     const reviewUrl=(!reconstruction||reconstruction.status==='ready')?((clip.scene&&state.preview?state.preview.url+'scene.html?clip='+clip.id:null)||(!clip.environment&&reconstruction?.reviewUrl)):null;
     if(reviewUrl){const review=element('button','Review 3D scene');review.dataset.review3d=clip.id;review.addEventListener('click',()=>{reviewClipId=clip.id;$('sceneReview').hidden=false;$('sceneReviewTitle').textContent=clip.title;$('sceneReviewFrame').src=reviewUrl;$('sceneReview').scrollIntoView({behavior:'smooth',block:'start'});});card.append(review);}
     if(clip.scene&&(state.rooms||[]).length){

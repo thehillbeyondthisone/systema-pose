@@ -9,7 +9,7 @@ const report={base:BASE,checks:[],errors:[],failed:[]};const pass=text=>{report.
  browser=await chromium.launch({channel:'msedge',headless:true});const page=await browser.newPage({viewport:{width:1440,height:1050}});page.setDefaultTimeout(60000);
  page.on('pageerror',e=>report.errors.push(e.message));page.on('response',r=>{if(r.status()>=400&&!r.url().endsWith('favicon.ico'))report.failed.push(r.url());});
  await page.route(new URL('scene.js',BASE).href,async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text())+'\nwindow.__grounding=()=>({objects,motion,frame,contactShadows,renderer,world,THREE,showFrame,renderSceneFrame});'});});
- await page.goto(BASE+'scene.html?clip=multiple-attackers&frame=150');await page.waitForFunction(()=>window.__grounding?.().contactShadows?.mesh.count===12&&document.getElementById('studioStatus').dataset.state==='ready'&&document.querySelectorAll('.builtin-model-card [data-model-readiness="ready"]').length===3);
+ await page.goto(BASE+'scene.html?clip=multiple-attackers&frame=150');await page.waitForFunction(()=>window.__grounding?.().contactShadows?.mesh.count===12&&document.getElementById('studioStatus').dataset.state==='ready'&&document.querySelectorAll('.builtin-model-card').length>0&&document.querySelectorAll('.builtin-model-card [data-model-readiness="ready"]').length===document.querySelectorAll('.builtin-model-card').length);
  const facing=await page.evaluate(()=>{
   const {objects,motion,showFrame,THREE}=window.__grounding(),names=motion.jointNames;let count=0,minDot=1;
   for(let frame=0;frame<motion.frames.length;frame++){
@@ -36,7 +36,7 @@ const report={base:BASE,checks:[],errors:[],failed:[]};const pass=text=>{report.
  });assert.equal(shadows.count,12);assert(Math.abs(shadows.floorY-.006)<1e-6);assert(shadows.milliseconds<.5);report.shadows=shadows;
  pass('One batched floor layer follows both feet and body, fades for lifted feet, and is deterministic when scrubbing');
  report.drawCalls=[];
- for(const style of ['mannequin','dummy','model:builtin-robot','model:builtin-hero-male']){
+ for(const style of ['mannequin','dummy','model:builtin-hero-male','model:builtin-hero-female']){
   await page.locator('#figureStyle').selectOption(style);
   const draw=await page.evaluate(()=>{const {contactShadows,renderer,renderSceneFrame}=window.__grounding(),auto=renderer.info.autoReset;renderer.info.autoReset=false;
    contactShadows.group.visible=false;renderer.info.reset();renderSceneFrame();const without={...renderer.info.render};
@@ -45,7 +45,7 @@ const report={base:BASE,checks:[],errors:[],failed:[]};const pass=text=>{report.
   assert.equal(draw.extraCalls,1);assert.equal(draw.extraTriangles,24);assert.equal(draw.shadowMaps,false);report.drawCalls.push({style,...draw});
  }
  pass('Actual render statistics add exactly one draw call and 24 triangles for four characters, with no shadow maps');
- await page.locator('#scenePeople input').first().uncheck();assert.equal(await page.evaluate(()=>window.__grounding().contactShadows.mesh.count),9);await page.locator('#scenePeople input').first().check();
+ await page.locator('#scenePeople input[type=checkbox]').first().uncheck();assert.equal(await page.evaluate(()=>window.__grounding().contactShadows.mesh.count),9);await page.locator('#scenePeople input[type=checkbox]').first().check();
  await page.locator('#figureStyle').selectOption('mannequin');await page.locator('[data-scene-view="scene"]').click();await page.locator('[data-camera="front"]').click();
  await page.evaluate(()=>{const {contactShadows,renderSceneFrame}=window.__grounding();contactShadows.group.visible=false;renderSceneFrame();});await page.locator('#orbitStage').screenshot({path:path.join(OUT,'shadows-off.png')});
  await page.evaluate(()=>{const {contactShadows,renderSceneFrame}=window.__grounding();contactShadows.group.visible=true;renderSceneFrame();});await page.locator('#orbitStage').screenshot({path:path.join(OUT,'shadows-on.png')});

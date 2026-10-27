@@ -1,5 +1,6 @@
 """Local dashboard bridge to the existing dedicated WSL/CUDA reconstruction runtime."""
 import json
+from collections import Counter
 import os
 from pathlib import Path, PureWindowsPath
 import shutil
@@ -148,23 +149,39 @@ def stop(admin, output, force=False):
 
 
 def reconstruct(admin, clip_id, raw):
+    # Reserve BUSY while still holding the same lock used by track edits, so the
+    # input snapshot cannot fall between correction validation and its save.
+    with admin.LOCK:
+        return _reconstruct_locked(admin, clip_id, raw)
+
+
+def _reconstruct_locked(admin, clip_id, raw):
     if admin.onboarding.gpu_paused():raise ValueError('GPU use is paused. Enable and check the GPU when it is available.')
     if clip_id not in admin.saved()['staged']:raise ValueError('Prepare a reviewed passage before reconstructing it.')
     if not runtime_state(admin)['ready']:raise ValueError('Run the workstation check and resolve the missing requirements first.')
     camera = raw.get('camera', 'moving')
     if camera not in ('moving', 'static'):raise ValueError('Choose moving or fixed camera.')
-    entry = next(e for e in admin.catalog()['lessons'] if e['id'] == clip_id)
-    motion = json.loads((admin.PROJECT / entry['motion']).read_text(encoding='utf-8'))
+    entry = next((e for e in admin.catalog()['lessons'] if e['id'] == clip_id), None)
+    if entry is None:raise ValueError('Unknown staged clip.')
+    motion_path = admin.track_corrections._asset(admin, clip_id, entry['motion'])
+    motion_hash = admin.digest(motion_path)
+    motion = json.loads(motion_path.read_text(encoding='utf-8'))
+    if admin.digest(motion_path) != motion_hash:raise ValueError('Tracking changed. Reload the participant editor and retry reconstruction.')
     if len(motion['frames']) < 30:raise ValueError('Choose at least one second for 3D reconstruction.')
-    if any(sum(p['id'] == person['id'] for frame in motion['frames'] for p in frame['people']) < 2 for person in entry['people']):
-        raise ValueError('Each participant needs at least two tracked frames. Review the 2D tracking first.')
+    counts = Counter(person['id'] for frame in motion['frames'] for person in frame['people'])
+    short = [f'{person["name"]} (ID {person["id"]}: {counts[person["id"]]} frame(s))'
+             for person in entry['people'] if counts[person['id']] < 2]
+    if not entry['people'] or short:
+        raise ValueError('Each participant needs at least two tracked frames. '
+                         + ('; '.join(short) + '. ' if short else '')
+                         + 'Open Participants & tracks to exclude brief detections or join fragments for the same person.')
     event = threading.Event()
 
     def action(identity, progress):
         path = record_path(admin, clip_id);path.parent.mkdir(parents=True, exist_ok=True)
         output = path.parent / identity;output.mkdir()
         value = {'clipId': clip_id, 'runId': identity, 'status': 'running', 'message': 'Checking the workstation…',
-                 'startedAt': admin.now(), 'camera': camera, 'reviewed': False}
+                 'startedAt': admin.now(), 'camera': camera, 'reviewed': False, 'motionSha256': motion_hash}
         admin.onboarding.save(path, value);CANCEL[clip_id] = event
         def finish(status, message):
             value.update(status=status, message=message, completedAt=admin.now())
@@ -178,12 +195,13 @@ def reconstruct(admin, clip_id, raw):
             if event.is_set():return finish('cancelled', 'Reconstruction cancelled.')
             if admin.onboarding.ACTIVE:raise ValueError('Wait for 2D preparation to finish before starting 3D.')
             with admin.onboarding.JOB_LOCK:
+                if admin.digest(motion_path) != motion_hash:raise ValueError('Participant tracking changed before reconstruction. Start a fresh run.')
                 source = admin.PROJECT / entry['video'];source_hash = admin.digest(source)
                 if source_hash != entry['sourceSha256']:raise ValueError('The staged video changed. Prepare it again.')
                 shutil.copyfile(source, output / 'source.mp4')
                 admin.onboarding.save(output / 'motion.json', motion)
                 admin.onboarding.save(output / 'manifest.json', {'input': 'source.mp4', 'sha256': source_hash,
-                    'fps': motion['fps'], 'frames': len(motion['frames']), 'sourceStart': motion['sourceStart'],
+                    'fps': motion['fps'], 'frames': len(motion['frames']), 'sourceStart': motion['sourceStart'], 'motionSha256': motion_hash,
                     'sourceEnd': motion['sourceEnd'], 'participants': {str(p['id']): p['name'] for p in entry['people']},
                     'reconstruction': {'method': 'PromptHMR world-video', 'hasRun': False}})
                 worker = command(admin, 'dashboard_3d_worker.py', '--output', linux_path(output), '--repo', REPO)
@@ -221,7 +239,10 @@ def reconstruct(admin, clip_id, raw):
                 scene = json.loads((output / 'scene.json').read_text(encoding='utf-8'))
                 if event.is_set():return finish('cancelled', 'Reconstruction cancelled.')
                 if admin.digest(source) != source_hash:raise ValueError('The input video changed during reconstruction.')
-                admin.attach_scene(clip_id, scene, internal=True)
+                with admin.LOCK:
+                    if admin.digest(motion_path) != motion_hash:raise ValueError('Participant tracking changed during reconstruction. Start a fresh run.')
+                    scene['motionSha256'] = motion_hash
+                    admin.attach_scene(clip_id, scene, internal=True)
                 value['sceneSha256'] = admin.digest(admin.PROJECT / 'site/clips' / clip_id / 'scene.json')
                 progress['message'] = 'Building the synchronized 3D review…'
                 preview = admin.make_preview(identity)
@@ -252,6 +273,7 @@ def approve(admin, clip_id, raw):
     if admin.BUSY.locked() or value['status'] != 'ready' or raw.get('reviewed') is not True or raw.get('runId') != value['runId']:
         raise ValueError('Review the finished 3D run before approving it.')
     if value['sceneSha256'] != admin.digest(scene):raise ValueError('This scene changed. Reconstruct and review it again.')
+    _check_motion_revision(admin, clip_id, value)
     value.update(reviewed=True, reviewedAt=admin.now())
     admin.onboarding.save(path, value)
     return {'message': '3D review saved. Build and check the final public preview, then publish.'}
@@ -264,6 +286,14 @@ def publish_check(admin, staged):
             raise ValueError('Finish and review the 3D reconstruction for ' + clip_id + ' before publishing.')
         if admin.digest(admin.PROJECT / 'site/clips' / clip_id / 'scene.json') != value['sceneSha256']:
             raise ValueError('The reviewed 3D scene changed. Reconstruct and review it again.')
+        _check_motion_revision(admin, clip_id, value)
+
+
+def _check_motion_revision(admin, clip_id, value):
+    if not value.get('motionSha256'):return  # Older reviewed scenes predate track corrections.
+    entry = next((e for e in admin.catalog()['lessons'] if e['id'] == clip_id), None)
+    if entry is None or admin.digest(admin.track_corrections._asset(admin, clip_id, entry['motion'])) != value['motionSha256']:
+        raise ValueError('Participant tracking changed. Reconstruct and review this passage again.')
 
 
 def log(admin, clip_id):

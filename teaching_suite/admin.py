@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 import onboarding
 import reconstruction
 import room_scans
+import track_corrections
 
 WORKSPACE = Path(__file__).resolve().parent.parent
 PROJECT = Path(os.environ.get('SYSTEMA_ADMIN_PROJECT_ROOT', str(WORKSPACE))).resolve()
@@ -266,8 +267,16 @@ def unstage(clip_id):
         destination = (DATA / 'unstaged' / uuid.uuid4().hex / clip_id).resolve()
         if source.parent != parent or not destination.is_relative_to(DATA.resolve()) or source_path.is_symlink():
             raise ValueError('Invalid staged clip location.')
+        corrections = DATA / 'track-corrections' / clip_id
+        correction_archive = (destination.parent / 'track-corrections' / clip_id).resolve()
+        if corrections.exists() and (corrections.is_symlink() or corrections.resolve().parent != (DATA / 'track-corrections').resolve()
+                                     or not correction_archive.is_relative_to(DATA.resolve())):
+            raise ValueError('Invalid correction archive location.')
         destination.parent.mkdir(parents=True)
         if source.exists():shutil.move(str(source), str(destination))
+        if corrections.exists():
+            correction_archive.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(corrections.resolve()), str(correction_archive))
         value = catalog();value['lessons'] = [entry for entry in value['lessons'] if entry['id'] != clip_id]
         onboarding.save(CATALOG, value);record['staged'].remove(clip_id);record['preview'] = None;save_state(record)
         reconstruction_state = reconstruction.record_path(sys.modules[__name__], clip_id)

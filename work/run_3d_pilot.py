@@ -37,6 +37,9 @@ def preflight(repo, input_path, output):
 
 def export_scene(pipeline, results, output, manifest, reviewed_identities=False, reference_motion=None):
     """Export final world pose parameters as joints; all people retain shared translations."""
+    if reference_motion is not None:
+        from dashboard_3d_worker import validate_participant_ids
+        validate_participant_ids([track.get('track_id') for track in results['people'].values()], reference_motion)
     import numpy as np
     import torch
     from smplx import SMPLX

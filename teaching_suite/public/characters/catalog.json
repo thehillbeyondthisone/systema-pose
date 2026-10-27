@@ -2,47 +2,6 @@
   "schemaVersion": 1,
   "models": [
     {
-      "id": "builtin-robot",
-      "name": "Expressive robot",
-      "description": "A playful, broad-handed robot with easy-to-follow limbs.",
-      "file": "characters/robot-expressive.glb",
-      "source": "https://github.com/mrdoob/three.js/tree/b924f0cad4058dc4dde71445c796980c3cd5b5ed/examples/models/gltf/RobotExpressive",
-      "creator": "Tomás Laulhé · modifications by Don McCurdy",
-      "license": "CC0 1.0",
-      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
-      "mapping": {
-        "pelvis": "Body",
-        "spine1": "Hips",
-        "spine2": "Abdomen",
-        "spine3": "Torso_1",
-        "neck": "Neck",
-        "head": "Head",
-        "left_hip": "UpperLegL",
-        "left_knee": "LowerLegL",
-        "left_ankle": "FootL",
-        "left_collar": "ShoulderL",
-        "left_shoulder": "UpperArmL",
-        "left_elbow": "LowerArmL",
-        "left_wrist": "Palm2L",
-        "right_hip": "UpperLegR",
-        "right_knee": "LowerLegR",
-        "right_ankle": "FootR",
-        "right_collar": "ShoulderR",
-        "right_shoulder": "UpperArmR",
-        "right_elbow": "LowerArmR",
-        "right_wrist": "Palm2R"
-      },
-      "settings": {
-        "scaleMultiplier": 1,
-        "yawDegrees": 0
-      },
-      "sourceSha256": "047f5e5fb3bb6d378bd1df16ca6137f2a596c99b3a1b5690b4020c05aaf6f319",
-      "modifications": "Reparented IK feet into each lower-leg chain without changing bind-world transforms; removed original animation clips.",
-      "bytes": 443444,
-      "sha256": "b1160db6944709e742b1fe17642ba8f2ac62968387360aba9b594ac438d49ff6",
-      "preview": "characters/builtin-robot.png"
-    },
-    {
       "id": "builtin-hero-male",
       "name": "Athlete · male",
       "description": "An anatomical base character in simple training underwear, with athletic proportions.",

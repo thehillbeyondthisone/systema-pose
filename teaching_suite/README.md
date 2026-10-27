@@ -18,6 +18,37 @@ There is one student interface. Existing class links also open this workspace an
 
 When available, **Explore in 3D** appears beside the view controls and inside Views. The 3D workspace offers **3D scene**, **Footage**, and **Compare**, plus Front, Side and Overhead camera angles. One shared player controls both views, including source audio, and stays above secondary scene settings. It remembers the selected layout and keeps playback available when footage is hidden. Opening the scene and returning to the lesson preserves the current source frame.
 
+Library cards with prepared 3D motion open directly in **Compare**, with the
+**Source camera** selected when available. Compare is also the initial layout
+on phones; subsequent layout choices are remembered. The striking and pad-work
+lesson uses the **17 October 2026 epoch-30 SHARE studio export**, with separate
+estimated room placements for the two camera shots. Studio alignment edits and
+alignment exports belong to the current shot. Placement, depth and scale remain
+estimates.
+
+On the workstation, library lessons whose video matches a cataloged clip with a
+3D scene open at `/scene.html?project=<id>`; **Annotate in 2D** opens the
+annotation view at the same moment.
+
+To trim a lesson, open it in 3D on this PC (`http://127.0.0.1:<port>`) and use
+**Trim clip** under the player: move the playhead and choose **Use current
+time**, or type seconds, then **Save trim**. Both the 3D and 2D views then play
+only that range. The footage, motion and scene files are not changed, and the
+trim is copied to catalog clips that share the video so a published build keeps
+it. **Show full clip** removes the trim.
+
+To add a missed strike after reconstruction, pause the footage at contact and
+open **Strike illustrations → Create cue at this frame**. Select the striking
+participant and hand, then the holder and the wrist carrying the mitt. Adjust
+the target offset if needed, set visual emphasis and duration, and **Save cue**.
+While editing, scrub or step to contact and choose **Use current frame** to
+retime the cue. Repeat for each missed strike; **Export cues** backs up the
+browser's saved illustrations. These cues add highlights without changing
+automatic detections or the reconstructed pose. Missing labels need no new
+reconstruction. Correct participant identities and tracking fragments before
+reconstruction when those inputs are wrong; inaccurate joint motion requires
+pose correction or another reconstruction, rather than a strike cue.
+
 Dragging from **Source camera** switches to an orbit centered on the visible
 participants; the pivot follows them during playback. A click alone keeps the
 source camera active. **Reset** restores the exact footage camera. The sample
@@ -55,6 +86,26 @@ stages reviewed clips, runs the installed GPU reconstruction, opens synchronized
 3D review, builds a public preview, and publishes through Git. The workstation
 panel checks GPU operations, dependencies, model files and disk reserves. Each
 3D run has progress, a local log, cancel/retry, and a separate review approval.
+Before reconstructing a staged passage, choose **Choose participants & correct
+tracks**. The editor shows the original track boxes over the exported video.
+Uncheck observers or unwanted detections, name the intended participants, and
+assign fragments of the same person to the same participant ID. Click a track
+number to jump to its first retained detection; scrub or step the video and use
+**Set start here / Set end here** to trim a fragment. Times refer to the exported
+passage; end bounds exclude that frame.
+
+Overlapping fragments are rejected by default. If visual review confirms that
+two boxes depict the same person, explicitly enable **Resolve overlapping
+fragments**: the primary track's box wins when present, otherwise the lowest
+source track ID wins. This decision is recorded with each resolved frame. It
+does not automatically identify people or repair an incorrect body pose.
+**Save participants & tracks** updates the passage's 2D and 3D input identities.
+Original detections remain in private storage for **Restore original tracks**;
+previous 3D results, room placement and previews need a fresh review after edits.
+Edits are blocked during processing, and an editor opened before another edit
+must reload before it can save. Reconstruction errors appear beside the passage's
+button and receive keyboard focus.
+
 Startup and installed-package checks use no GPU. GPU use starts paused; enable
 it explicitly when available, or pause it to keep 2D tracking on the CPU. Draft
 details and passages are remembered per video in this browser.

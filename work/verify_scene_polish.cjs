@@ -21,11 +21,11 @@ function largeGLB(){
  browser=await chromium.launch({channel:'msedge',headless:true});const context=await browser.newContext({viewport:{width:1440,height:1050}}),page=await context.newPage();page.setDefaultTimeout(60000);
  page.on('pageerror',error=>report.errors.push(error.message));page.on('response',response=>{if(response.status()>=400&&!response.url().endsWith('favicon.ico'))report.failed.push(response.url());});
  await page.route(new URL('scene.js',BASE).href,async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text())+'\nwindow.__polish=()=>({objects,motion,frame,world,renderer,studioLighting,studioEnvironment,modelLibrary,strikeCues,THREE});'});});
- const ready=async()=>page.waitForFunction(()=>window.__polish?.().studioEnvironment?.ready&&document.querySelectorAll('.builtin-model-card [data-model-readiness="ready"]').length===3&&!document.getElementById('modelUpload').disabled&&document.getElementById('sceneVideo').readyState>=2);
+ const ready=async()=>page.waitForFunction(()=>window.__polish?.().studioEnvironment?.ready&&document.querySelectorAll('.builtin-model-card').length>0&&document.querySelectorAll('.builtin-model-card [data-model-readiness="ready"]').length===document.querySelectorAll('.builtin-model-card').length&&!document.getElementById('modelUpload').disabled&&document.getElementById('sceneVideo').readyState>=2);
  await page.goto(BASE+'scene.html?clip=multiple-attackers&frame=230');await ready();
  assert(!await page.locator('#debugMenu').isVisible());assert(!await page.locator('#modelUpload').isVisible());assert(!await page.locator('#contactDetails').isVisible());assert(!await page.locator('#contactEffects').isChecked());
  assert.equal(await page.locator('.builtin-model-card [data-model-participant]').count(),0);
- assert((await page.locator('#modelLibrary').boundingBox()).height<225);
+ await page.locator('#modelDetails').evaluate(details=>details.open=true);assert((await page.locator('#modelLibrary').boundingBox()).height<225);
  const lighting=await page.evaluate(()=>{
   const {studioLighting,studioEnvironment,world,THREE,objects}=window.__polish();studioLighting.sync(studioEnvironment);
   const expected=studioEnvironment.config.lighting.fixtures;
@@ -57,7 +57,7 @@ function largeGLB(){
  pass('A valid 65 MiB rig loads, maps and animates; larger files are rejected before reading; browser storage and existing choices remain usable');
  for(const width of [390,768]){
   await page.setViewportSize({width,height:width===390?844:1024});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-  await page.locator('#modelLibrary').screenshot({path:path.join(OUT,`compact-library-${width}.png`)});await page.locator('#debugToggle').click();assert(await page.locator('#modelUpload').isVisible());await page.locator('#debugClose').click();
+  await page.locator('#modelDetails').evaluate(details=>details.open=true);await page.locator('#modelLibrary').screenshot({path:path.join(OUT,`compact-library-${width}.png`)});await page.locator('#debugToggle').click();assert(await page.locator('#modelUpload').isVisible());await page.locator('#debugClose').click();
  }
  assert.deepEqual(report.errors,[]);assert.deepEqual(report.failed,[]);pass('Compact library, naming and debug controls work on phone and tablet without JavaScript or asset failures');
 }catch(error){report.failure=error.stack;throw error;}finally{fs.writeFileSync(path.join(OUT,'verification.json'),JSON.stringify(report,null,2));if(browser)await browser.close();if(server)server.kill();}})().catch(error=>{console.error(error);process.exitCode=1;});

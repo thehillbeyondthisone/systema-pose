@@ -33,7 +33,7 @@
     $('libraryStatus').textContent = lessons.length ? 'No clips match. Try another search or footage type.' : 'Class clips are being prepared. Check back soon.';
     for (const item of visible) {
       const card = document.createElement('article'); card.className = 'clip-card';
-      const preview = document.createElement('a'); preview.className = 'clip-preview'; preview.href = SystemaSite.link('lesson.html',item.id);
+      const preview = document.createElement('a'); preview.className = 'clip-preview'; preview.href = SystemaSite.link(item.has3d ? 'scene.html' : 'lesson.html',item.id);
       preview.setAttribute('aria-label',`Open ${item.title}`);
       const image = document.createElement('img'); image.src = item.poster; image.alt = ''; image.loading = featured ? 'eager' : 'lazy';
       const play = document.createElement('span'); play.className = 'clip-play'; play.setAttribute('aria-hidden','true'); play.append(icon('play'));

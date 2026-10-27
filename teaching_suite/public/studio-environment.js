@@ -6,10 +6,11 @@ const fields=['x','y','z','pitch','yaw','roll','scale'];
 const degrees=180/Math.PI;
 
 export class StudioEnvironment {
-  constructor({world,renderer,camera,orbit,canvas,grid,motion,configUrl,onChange}){
+  constructor({world,renderer,camera,orbit,canvas,grid,motion,configUrl,onChange,initialFrame=0}){
     Object.assign(this,{world,renderer,camera,orbit,canvas,grid,motion,configUrl,onChange});
     this.group=new THREE.Group();world.add(this.group);
     this.alignment={...DEFAULT_ALIGNMENT};this.ready=false;this.visible=false;this.xray=true;this.pickPoints=[];
+    this.frame=initialFrame;
     this.markers=new THREE.Group();world.add(this.markers);
     this.status=$('studioStatus');this.status.textContent='Loading studio scan…';
     this.bind();this.load();
@@ -21,15 +22,20 @@ export class StudioEnvironment {
       if(!response.ok)throw Error('Studio configuration is missing.');
       const config=await response.json();
       if(config.schemaVersion!==1||!config.asset||!validAlignment(config.alignment))throw Error('Invalid studio configuration.');
+      if(config.shots){
+        let end=0;
+        if(!Array.isArray(config.shots)||!config.shots.length)throw Error('Invalid studio shot placements.');
+        for(const shot of config.shots){
+          if(!Number.isInteger(shot.startFrame)||!Number.isInteger(shot.endFrame)||shot.startFrame!==end||shot.endFrame<=end||!validAlignment(shot.alignment))throw Error('Invalid studio shot placements.');
+          end=shot.endFrame;
+        }
+        if(end!==this.motion.frames.length)throw Error('Studio shot placements do not cover this lesson.');
+      }
       this.config=config;
       this.calibrationId=config.calibration?.id||null;
       this.matched=Boolean(this.calibrationId&&this.calibrationId===this.motion.roomCalibration?.id);
-      this.key=`systema-studio-v2:${this.motion.sourceSha256}:${config.id}:${this.calibrationId||'unregistered'}`;
-      this.alignment={...config.alignment};
-      try{
-        const saved=JSON.parse(localStorage.getItem(this.key));
-        if(this.matchesRecord(saved))this.alignment={...saved.alignment};
-      }catch{}
+      this.baseKey=`systema-studio-v2:${this.motion.sourceSha256}:${config.id}:${this.calibrationId||'unregistered'}`;
+      this.placement=null;this.syncFrame(this.frame);
       this.fill();this.updateCalibrationLabel();
       const {SparkRenderer,SplatMesh,dyno}=await import('./vendor/spark/spark.module.js');
       const asset=new URL(config.asset,new URL(this.configUrl,location.href));
@@ -108,7 +114,7 @@ export class StudioEnvironment {
     $('studioGrid').addEventListener('change',()=>this.apply());
     $('studioXray').addEventListener('change',()=>{this.xray=$('studioXray').checked;this.onChange();});
     $('studioReset').addEventListener('click',()=>{
-      this.alignment={...this.config.alignment};this.cancelPick();this.apply();this.save();
+      this.alignment={...this.placement.alignment};this.cancelPick();this.apply();this.save();
       this.status.textContent=this.matched?'Matched studio calibration restored.':'Initial studio alignment restored.';
     });
     $('studioRetry').addEventListener('click',()=>this.load());
@@ -137,10 +143,20 @@ export class StudioEnvironment {
       }catch(error){this.status.textContent=error.message;}finally{event.target.value='';}
     });
   }
-  record(){return {schemaVersion:2,studio:this.config.id,sourceSha256:this.motion.sourceSha256,calibrationId:this.calibrationId,alignment:{...this.alignment}};}
+  syncFrame(frame){
+    this.frame=frame;if(!this.config)return;
+    const placement=this.config.shots?.find(shot=>shot.startFrame<=frame&&frame<shot.endFrame)||this.config;
+    if(this.placement===placement)return;
+    this.placement=placement;this.key=this.baseKey+(this.config.shots?`:${placement.startFrame}-${placement.endFrame}`:'');
+    this.alignment={...placement.alignment};
+    try{const saved=JSON.parse(localStorage.getItem(this.key));if(this.matchesRecord(saved))this.alignment={...saved.alignment};}catch{}
+    this.cancelPick();this.apply(false);
+  }
+  record(){return {schemaVersion:2,studio:this.config.id,sourceSha256:this.motion.sourceSha256,calibrationId:this.calibrationId,shotStartFrame:this.config.shots?this.placement.startFrame:null,alignment:{...this.alignment}};}
   matchesRecord(value){
     return Boolean(value&&[1,2].includes(value.schemaVersion)&&value.studio===this.config.id&&
-      value.sourceSha256===this.motion.sourceSha256&&(value.calibrationId||null)===this.calibrationId&&validAlignment(value.alignment));
+      value.sourceSha256===this.motion.sourceSha256&&(value.calibrationId||null)===this.calibrationId&&
+      (value.shotStartFrame??null)===(this.config.shots?this.placement.startFrame:null)&&validAlignment(value.alignment));
   }
   readyMessage(){
     if(!this.matched)return 'Studio loaded · alignment estimate. Compare it with the footage.';
@@ -149,7 +165,7 @@ export class StudioEnvironment {
     return `Studio matched to footage${Number.isFinite(residual)?` · ${residual.toFixed(1)} px median fitted room landmark error`:''}. Figure scale remains a model estimate.`;
   }
   updateCalibrationLabel(){
-    const custom=fields.some(key=>Math.abs(this.alignment[key]-this.config.alignment[key])>1e-8);
+    const custom=fields.some(key=>Math.abs(this.alignment[key]-this.placement.alignment[key])>1e-8);
     $('studioBadge').textContent=custom?'Custom alignment':this.matched?'Matched to footage':'Alignment estimate';
     $('studioBadge').classList.toggle('calibrated',this.matched&&!custom);
     $('studioCalibrationHelp').textContent=this.matched
@@ -158,13 +174,13 @@ export class StudioEnvironment {
     $('studioReset').textContent=this.matched?'Restore calibration':'Reset alignment';
   }
   fill(){for(const key of fields)$('studio-'+key).value=String(Math.round(this.alignment[key]*10000)/10000);}
-  apply(){
+  apply(notify=true){
     const a=this.alignment;this.group.position.set(a.x,a.y,a.z);
     this.group.rotation.set(a.pitch/degrees,a.yaw/degrees,a.roll/degrees,'YXZ');this.group.scale.setScalar(a.scale);
     this.group.visible=this.visible&&this.ready;
     if(this.mesh)this.mesh.opacity=Number($('studioOpacity').value);
     this.grid.visible=!this.visible||!this.ready||$('studioGrid').checked;
-    this.fill();this.updateCalibrationLabel();this.onChange();
+    this.fill();this.updateCalibrationLabel();if(notify)this.onChange();
   }
   save(){try{localStorage.setItem(this.key,JSON.stringify(this.record()));}catch{this.status.textContent='Browser storage is unavailable. Export alignment to keep it.';}}
   cancelPick(){
