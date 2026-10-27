@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "id": "studio-epoch30-striking-floor-v1",
+  "title": "Systema studio · 17 October 2026 · epoch 30",
+  "asset": "../../../teaching_suite/public/studio/studio.splat",
+  "sourceSha256": "9ceb7bcedfae221798baf73e1ec151830ab710e77b297481970e1e12781072a5",
+  "registration": "Epoch-30 SHARE export, matched to this lesson with a fitted scan floor constrained to the reconstructed ground. Physical dimensions remain unmeasured.",
+  "alignment": {
+    "x": 2.698038037822646,
+    "y": 1.903819369260209,
+    "z": -0.44323633658358014,
+    "yaw": -112.52326349161505,
+    "pitch": -89.20257967467163,
+    "roll": -16.84834223508172,
+    "scale": 1.2177593629067687
+  },
+  "navigation": {
+    "coordinateSpace": "scan-local",
+    "method": "Conservative interior of the main training floor from the scan's wall lines; the side recess is excluded. Approximate, not physically measured.",
+    "rotationDegrees": 35,
+    "min": [
+      -3.68,
+      -4.66,
+      -1.54
+    ],
+    "max": [
+      3.96,
+      -0.68,
+      0.55
+    ]
+  },
+  "lighting": {
+    "method": "Three compact ceiling fixtures located in the new scan. Exposure, power and bounce remain visual estimates.",
+    "coordinateSpace": "scan-local",
+    "down": [
+      0,
+      0,
+      -1
+    ],
+    "up": [
+      0,
+      1,
+      0
+    ],
+    "fixtures": [
+      {
+        "position": [
+          1.515310645,
+          0.112268582,
+          0.501346767
+        ],
+        "width": 0.23,
+        "height": 0.23,
+        "intensity": 18,
+        "color": "#fffdfb"
+      },
+      {
+        "position": [
+          3.206084967,
+          -1.634266138,
+          0.534479856
+        ],
+        "width": 0.23,
+        "height": 0.23,
+        "intensity": 18,
+        "color": "#fffdfb"
+      },
+      {
+        "position": [
+          -2.464067936,
+          -1.998982072,
+          0.521145761
+        ],
+        "width": 0.23,
+        "height": 0.23,
+        "intensity": 18,
+        "color": "#fffdfb"
+      }
+    ]
+  },
+  "shots": [
+    {
+      "startFrame": 0,
+      "endFrame": 2822,
+      "alignment": {
+        "x": 2.698038037822646,
+        "y": 1.903819369260209,
+        "z": -0.44323633658358014,
+        "yaw": -112.52326349161505,
+        "pitch": -89.20257967467163,
+        "roll": -16.84834223508172,
+        "scale": 1.2177593629067687
+      }
+    },
+    {
+      "startFrame": 2822,
+      "endFrame": 3908,
+      "alignment": {
+        "x": -3.241287211695664,
+        "y": 1.6495004792130459,
+        "z": -3.181221589472213,
+        "yaw": 72.89863003373884,
+        "pitch": -89.20257967467164,
+        "roll": -16.84834223508206,
+        "scale": 1.0550867824511272
+      }
+    }
+  ],
+  "registrationReview": {
+    "sourceExport": "2026-10-17_07-57-33_3DGS_epoch_30.ply",
+    "floorPlaneScan": {
+      "normal": [
+        -0.004033741762716889,
+        0.013319770824885302,
+        0.9999031516264782
+      ],
+      "d": 1.5633789624214656,
+      "points": 56280
+    },
+    "inputSceneSha256": "e16762f40711c3169647dd5a0bf692aea020d485d95f12544761912c70a4c07f",
+    "shots": [
+      {
+        "startFrame": 0,
+        "endFrame": 2822,
+        "anchorFrames": [
+          0,
+          150,
+          450,
+          900,
+          1350,
+          1800,
+          2250,
+          2700,
+          2821
+        ],
+        "pixelResidualQuantiles": [
+          3.5905772511045484,
+          5.635004570100591,
+          14.293908928603358,
+          29.67167360481238
+        ]
+      },
+      {
+        "startFrame": 2822,
+        "endFrame": 3908,
+        "anchorFrames": [
+          2822,
+          2900,
+          3100,
+          3300,
+          3500,
+          3700
+        ],
+        "pixelResidualQuantiles": [
+          4.407947475132659,
+          8.591268337359736,
+          15.296175902371715,
+          22.722902873075384
+        ]
+      }
+    ],
+    "method": "Scan-photo feature correspondences extended through stationary source-footage landmarks; per-shot room similarity fit with scan-floor normal and offset constrained to the existing reconstructed ground."
+  }
+}

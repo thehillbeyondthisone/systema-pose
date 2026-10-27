@@ -39,6 +39,63 @@
         }
       ],
       "environment": "teaching_suite/public/studio/environment.json"
+    },
+    {
+      "id": "systema-extended-ground-work",
+      "title": "Systema - Extended ground work",
+      "description": "",
+      "category": "Training",
+      "tags": [],
+      "video": "site/clips/systema-extended-ground-work/source.mp4",
+      "motion": "site/clips/systema-extended-ground-work/motion.json",
+      "poster": "site/clips/systema-extended-ground-work/poster.jpg",
+      "frameMapping": "frame",
+      "people": [
+        {
+          "id": 3,
+          "name": "Kneeling partner",
+          "color": "#ea69e6"
+        },
+        {
+          "id": 4,
+          "name": "Ground instructor",
+          "color": "#7cea91"
+        }
+      ],
+      "sourceSha256": "cf40f971d219819a4954cd5489a307948409e175b5b82b9931c51bfd7e6aae86",
+      "scene": "site/clips/systema-extended-ground-work/scene.json"
+    },
+    {
+      "id": "systema-striking-and-pad-work",
+      "title": "Systema - Striking and pad work",
+      "description": "Study striking principles followed by pad work. Includes synchronized footage, 2D tracking and estimated 3D motion.",
+      "category": "Training",
+      "tags": [
+        "Striking",
+        "Pad work"
+      ],
+      "video": "site/clips/systema-striking-and-pad-work/source.mp4",
+      "motion": "site/clips/systema-striking-and-pad-work/motion.json",
+      "poster": "site/clips/systema-striking-and-pad-work/poster.jpg",
+      "frameMapping": "frame",
+      "people": [
+        {
+          "id": 1,
+          "name": "Instructor",
+          "color": "#ffc044"
+        },
+        {
+          "id": 2,
+          "name": "Training partner",
+          "color": "#4ad4ff"
+        }
+      ],
+      "sourceSha256": "c9403d81f0d252825055ecb416ae3ace934185b7128f5dda7b9b6b93ac00801e",
+      "scene": "site/clips/systema-striking-and-pad-work/scene.json",
+      "environment": "site/clips/systema-striking-and-pad-work/environment.json",
+      "videoFrameOffset": 0.021028645833333335,
+      "trimStart": 10.0,
+      "trimEnd": 123.0
     }
   ]
 }
